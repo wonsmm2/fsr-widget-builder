@@ -7,7 +7,7 @@
     background: #0d1218;
   }
   .device-bar {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; gap: 10px;
     padding: 8px 12px;
     background: var(--bg-2);
     border-bottom: 1px solid var(--line);
@@ -26,17 +26,8 @@
     background: #0d1218;
     min-height: 220px;
   }
-  .prev-period {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #232c3a;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: .09em;
-    color: #8b99ab;
-  }
   .prev-live {
+    margin-left: auto;
     color: var(--ok); font-weight: 600; letter-spacing: .09em; font-size: 10px;
     border: 1px solid rgba(46,160,67,.4); padding: 2px 7px; border-radius: var(--radius);
   }

@@ -18,8 +18,6 @@ function blankDesign() {
       publisher: 'Custom',
       compatibility: '7.6.2',
       module: 'alerts',
-      dateField: 'createDate',
-      period: '7d',
       autoRefresh: true,
       refreshInterval: 300,
       accent: '#2f81f7',
@@ -27,7 +25,7 @@ function blankDesign() {
     },
     blocks: [
       Object.assign(defaults('stat'), { label: 'Total', accent: true }),
-      Object.assign(defaults('stat'), { label: 'Open', onlyOpen: true, accent: false }),
+      Object.assign(defaults('stat'), { label: 'Unassigned', accent: false }),
       Object.assign(defaults('bars'), {}),
       Object.assign(defaults('list'), {})
     ]
@@ -37,7 +35,13 @@ function blankDesign() {
 function load() {
   try {
     var raw = localStorage.getItem(LS_KEY);
-    if (raw) { design = JSON.parse(raw); return; }
+    if (raw) {
+      design = JSON.parse(raw);
+      // Drop any block whose type no longer exists (e.g. a design saved before a
+      // block type was retired) so an old save can't crash the current build.
+      design.blocks = (design.blocks || []).filter(function (b) { return !!BLOCKS[b.type]; });
+      return;
+    }
   } catch (e) { /* corrupt or unavailable storage: fall through to a blank design */ }
   design = blankDesign();
 }
@@ -82,6 +86,4 @@ function toast(msg) {
   clearTimeout(t._t);
   t._t = setTimeout(function () { t.classList.remove('show'); }, 1800);
 }
-
-var PERIOD_LABELS = { '24h': 'Last 24 Hours', '7d': 'Last 7 Days', '30d': 'Last 30 Days', '90d': 'Last 90 Days', all: 'All Time' };
 

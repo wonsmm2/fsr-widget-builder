@@ -21,12 +21,13 @@ function chk(path, val, label) {
   return '<div class="fld-check"><input type="checkbox" data-bind="' + path + '"' + (val ? ' checked' : '') +
     ' id="c_' + path.replace(/\W/g, '_') + '"><label for="c_' + path.replace(/\W/g, '_') + '">' + label + '</label></div>';
 }
+/* Filtering is never configured here - see the module-level note in blocks.js.
+ * This just tells whoever is building the layout that the block will get a real
+ * Filter Criteria control once the widget is installed and opened in FortiSOAR. */
+function filterNote(text) {
+  return '<div class="hint" style="margin:2px 0 12px">' + (text || 'Filter Criteria (with Relative date support) is configured per-panel inside FortiSOAR’s Edit dialog, not here.') + '</div>';
+}
 
-var SCOPE_OPTS = [
-  { v: 'period', l: 'Configured period' },
-  { v: 'last24h', l: 'Last 24 hours (fixed)' },
-  { v: 'all', l: 'All time (no date filter)' }
-];
 var WIDTH_OPTS = [
   { v: 3, l: 'Quarter (1/4)' }, { v: 4, l: 'Third (1/3)' }, { v: 6, l: 'Half (1/2)' },
   { v: 8, l: 'Two-thirds (2/3)' }, { v: 12, l: 'Full width' }
@@ -59,13 +60,7 @@ function renderWidgetProps() {
 
   h += '<div class="divider"></div><div class="sub-head">Data</div>';
   h += fld('Module (data source)', txt('widget.module', w.module, 'alerts'),
-    'Typed by hand - this builder never contacts a FortiSOAR instance.');
-  h += fld('Time Range Field', txt('widget.dateField', w.dateField, 'createDate'),
-    'Any Date/Time field: createDate, modifyDate, eventTimestamp, ...');
-  h += fld('Default Period', sel('widget.period', w.period, [
-    { v: '24h', l: 'Last 24 Hours' }, { v: '7d', l: 'Last 7 Days' },
-    { v: '30d', l: 'Last 30 Days' }, { v: '90d', l: 'Last 90 Days' }, { v: 'all', l: 'All Time' }
-  ]));
+    'Typed by hand - this builder never contacts a FortiSOAR instance. Shared by every panel below; each panel then applies its own Filter Criteria on top of it.');
 
   h += '<div class="divider"></div><div class="sub-head">Runtime</div>';
   h += chk('widget.autoRefresh', w.autoRefresh, 'Enable auto refresh by default');
@@ -96,27 +91,8 @@ function renderBlockProps(b) {
 
   if (b.type === 'stat') {
     h += fld('Label', txt(p + 'label', b.label));
-    h += fld('Metric', sel(p + 'metric', b.metric, [
-      { v: 'count', l: 'Record count' },
-      { v: 'oldestAge', l: 'Age of oldest record' }
-    ]), b.metric === 'oldestAge' ? 'Shows how long the oldest matching record has been sitting, colored by urgency.' : '');
-    h += fld('Time Scope', sel(p + 'scope', b.scope, SCOPE_OPTS));
-    h += chk(p + 'onlyOpen', b.onlyOpen, 'Only unresolved records');
-    if (b.metric === 'count') {
-      h += chk(p + 'onlyUnassigned', b.onlyUnassigned, 'Only unassigned records');
-      if (b.onlyUnassigned) h += fld('Owner Field', txt(p + 'ownerField', b.ownerField, 'owner'));
-    }
+    h += filterNote();
     h += chk(p + 'accent', b.accent, 'Highlight tile (accent border)');
-  }
-
-  if (b.type === 'delta') {
-    h += fld('Label', txt(p + 'label', b.label));
-    h += chk(p + 'onlyOpen', b.onlyOpen, 'Only unresolved records');
-    h += fld('Good Direction', sel(p + 'goodDirection', b.goodDirection, [
-      { v: 'down', l: 'Down is good (volume, backlog)' },
-      { v: 'up', l: 'Up is good (closed, automated)' }
-    ]), 'Decides whether a rise is shown in red or green.');
-    h += '<div class="hint" style="margin:-6px 0 12px">Compares the configured period against the immediately preceding window of the same length. Not available when the period is All Time.</div>';
   }
 
   if (b.type === 'metric') {
@@ -133,85 +109,52 @@ function renderBlockProps(b) {
       { v: 'percent', l: 'Percent' }
     ]));
     h += fld('Decimals', num(p + 'decimals', b.decimals, 0, 4));
-    h += fld('Time Scope', sel(p + 'scope', b.scope, SCOPE_OPTS));
-    h += chk(p + 'onlyOpen', b.onlyOpen, 'Only unresolved records');
+    h += filterNote();
     h += chk(p + 'accent', b.accent, 'Highlight tile');
   }
 
   if (b.type === 'gauge') {
     h += fld('Label', txt(p + 'label', b.label));
-    h += fld('Numerator', sel(p + 'numerator', b.numerator, [
-      { v: 'resolved', l: 'Resolved / closed' },
-      { v: 'unresolved', l: 'Still open' },
-      { v: 'assigned', l: 'Assigned to someone' },
-      { v: 'unassigned', l: 'Unassigned' }
-    ]), 'Shown as a percentage of all records in scope.');
-    if (b.numerator === 'assigned' || b.numerator === 'unassigned') {
-      h += fld('Owner Field', txt(p + 'ownerField', b.ownerField || 'owner', 'owner'));
-    }
     h += fld('Target %', num(p + 'target', b.target, 0, 100), 'Draws a target tick and colors the value against it.');
-    h += fld('Time Scope', sel(p + 'scope', b.scope, SCOPE_OPTS));
+    h += filterNote('The percentage is (records matching a Numerator Filter Criteria) / (records matching a Denominator Filter Criteria). Both are configured per-panel in FortiSOAR - e.g. denominator = everything, numerator = Status is Resolved.');
     h += chk(p + 'accent', b.accent, 'Highlight tile');
-  }
-
-  if (b.type === 'aging') {
-    h += fld('Label', txt(p + 'label', b.label));
-    h += chk(p + 'onlyOpen', b.onlyOpen, 'Only unresolved records');
-    h += '<div class="hint" style="margin:-6px 0 12px">Buckets records into &lt;1h / 1-4h / 4-24h / 1-7d / &gt;7d by the Time Range Field. Ignores the search period so nothing ages out of view. Costs 5 queries.</div>';
-  }
-
-  if (b.type === 'table') {
-    h += fld('Label', txt(p + 'label', b.label));
-    h += fld('Columns', txt(p + 'columns', b.columns, 'severity:Severity, status:Status'),
-      'Comma separated. Use field:Label to rename a header. The module display field is always the first column.');
-    h += fld('Sort Field', txt(p + 'sortField', b.sortField, '(defaults to Time Range Field)'));
-    h += fld('Sort Direction', sel(p + 'sortDir', b.sortDir, [
-      { v: 'DESC', l: 'Descending (newest first)' },
-      { v: 'ASC', l: 'Ascending (oldest first)' }
-    ]));
-    h += fld('Row Limit', num(p + 'limit', b.limit, 1, 50));
-    h += fld('Time Scope', sel(p + 'scope', b.scope, SCOPE_OPTS));
-    h += chk(p + 'onlyOpen', b.onlyOpen, 'Only unresolved records');
   }
 
   if (b.type === 'bars' || b.type === 'donut' || b.type === 'stacked') {
     h += fld('Label', txt(p + 'label', b.label));
-    h += fld('Group By Field', txt(p + 'field', b.field, 'severity'));
-    h += fld('Field Kind', sel(p + 'kind', b.kind, [
-      { v: 'picklist', l: 'Picklist (.itemValue)' },
-      { v: 'reference', l: 'Lookup / reference' },
-      { v: 'plain', l: 'Plain value' }
-    ]), 'Picklist and lookup fields store an IRI, so the query must group on a sub-attribute.');
-    if (b.kind === 'reference') h += fld('Display Attribute', txt(p + 'refAttr', b.refAttr, 'name'));
-    h += fld('Time Scope', sel(p + 'scope', b.scope, SCOPE_OPTS));
-    h += chk(p + 'onlyOpen', b.onlyOpen, 'Only unresolved records');
-    if (b.type === 'bars') {
-      h += fld('Max Rows', num(p + 'maxRows', b.maxRows, 1, 20));
-      h += chk(p + 'showRank', b.showRank, 'Show rank numbers (Top N style)');
-    }
+    h += fld('Group By Field', txt(p + 'field', b.field, 'severity'),
+      'Whether this is a picklist, a lookup, or a plain field is auto-detected from the module at runtime - not asked here.');
+    h += filterNote();
+    if (b.type === 'bars') h += fld('Max Rows', num(p + 'maxRows', b.maxRows, 1, 20));
     if (b.type === 'donut') h += fld('Legend Position', sel(p + 'legend', b.legend, ['right', 'left', 'top', 'bottom']));
-  }
-
-  if (b.type === 'trend') {
-    h += fld('Label', txt(p + 'label', b.label));
-    h += fld('Buckets', num(p + 'buckets', b.buckets, 3, 24),
-      'The Query API has no date-histogram operator, so the widget fires one count query per bucket. Higher = more requests per refresh.');
-    h += chk(p + 'onlyOpen', b.onlyOpen, 'Only unresolved records');
   }
 
   if (b.type === 'list') {
     h += fld('Label', txt(p + 'label', b.label));
     h += fld('Subtitle', txt(p + 'subtitle', b.subtitle, 'optional'));
-    h += fld('Sort Field', txt(p + 'sortField', b.sortField, '(defaults to Time Range Field)'));
+    h += fld('Sort Field', txt(p + 'sortField', b.sortField, 'e.g. createDate'));
     h += fld('Sort Direction', sel(p + 'sortDir', b.sortDir, [
       { v: 'ASC', l: 'Ascending (oldest first)' },
       { v: 'DESC', l: 'Descending (newest first)' }
     ]));
     h += fld('Row Limit', num(p + 'limit', b.limit, 1, 50));
     h += fld('Secondary Field', txt(p + 'secondaryField', b.secondaryField, 'status'), 'Shown on the right of each row. Leave blank to hide.');
-    h += fld('Time Scope', sel(p + 'scope', b.scope, SCOPE_OPTS));
-    h += chk(p + 'onlyOpen', b.onlyOpen, 'Only unresolved records');
     h += chk(p + 'showAge', b.showAge, 'Show age + urgency dot');
+    if (b.showAge) h += '<div class="hint" style="margin:-6px 0 12px">Age is computed from Sort Field, so pick a Date/Time field as the sort field for this to make sense.</div>';
+    h += filterNote();
+  }
+
+  if (b.type === 'table') {
+    h += fld('Label', txt(p + 'label', b.label));
+    h += fld('Columns', txt(p + 'columns', b.columns, 'severity:Severity, status:Status'),
+      'Comma separated. Use field:Label to rename a header. The module display field is always the first column.');
+    h += fld('Sort Field', txt(p + 'sortField', b.sortField, 'e.g. createDate'));
+    h += fld('Sort Direction', sel(p + 'sortDir', b.sortDir, [
+      { v: 'DESC', l: 'Descending (newest first)' },
+      { v: 'ASC', l: 'Ascending (oldest first)' }
+    ]));
+    h += fld('Row Limit', num(p + 'limit', b.limit, 1, 50));
+    h += filterNote();
   }
 
   h += '<div class="divider"></div>';
@@ -254,4 +197,3 @@ function bindInputs() {
   var d = document.getElementById('btnDeselect');
   if (d) d.addEventListener('click', function () { selectedId = null; renderAll(); });
 }
-

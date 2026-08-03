@@ -9,106 +9,118 @@ function formName() { return 'edit' + pascal(camelSafe(design.widget.name)) + 'F
 
 function usesAny(fn) { return design.blocks.some(fn); }
 function has(type) { return design.blocks.some(function (b) { return b.type === type; }); }
-/* onlyOpen is now a runtime toggle, so the helper must exist whenever any block
- * exposes it - not just when it happens to be switched on in the current design. */
-function needsNotClosed() {
-  return has('gauge') || usesAny(function (b) { return editableKeys(b.type).indexOf('onlyOpen') >= 0; });
-}
-function needsAge() {
-  return usesAny(function (b) { return (b.type === 'list' && b.showAge) || (b.type === 'stat' && b.metric === 'oldestAge'); });
-}
-function needsPaged() {
-  return has('list') || has('table') || usesAny(function (b) { return b.type === 'stat' && b.metric === 'oldestAge'; });
-}
-function needsCount() {
-  return has('trend') || has('delta') || has('gauge') || has('aging') ||
-    usesAny(function (b) { return b.type === 'stat' && b.metric === 'count'; });
-}
-/* Entity + modelMetadatasService are only needed to resolve the module display field. */
-function needsMetadata() { return has('list') || has('table'); }
-/* Shared semantic palette helper, used by every grouped visual. */
-function needsColorFor() { return has('bars') || has('donut') || has('stacked') || has('aging'); }
+
+/* Any block other than a static Section Title queries the module, so it needs the
+ * Query service to turn its saved Filter Criteria into a request payload. */
+function needsQuery() { return usesAny(function (b) { return b.type !== 'header'; }); }
+function needsPaged() { return has('list') || has('table'); }
+/* Entity is used at runtime purely to auto-detect whether a Group By field is a
+ * picklist or a lookup/reference, so the query can target the right sub-attribute -
+ * this is never asked as a design-time question (see blocks.js). */
+function needsEntity() { return has('bars') || has('donut') || has('stacked'); }
+/* modelMetadatasService/appModulesService/$state/$filter exist only to resolve the
+ * module's display field and to make list/table rows clickable. */
+function needsOpenRecord() { return has('list') || has('table'); }
+function needsAge() { return usesAny(function (b) { return b.type === 'list' && b.showAge; }); }
+function needsColorFor() { return has('bars') || has('donut') || has('stacked'); }
 function needsSegments() { return has('stacked'); }
 function needsMetricFmt() { return has('metric'); }
-function needsQAll() { return has('trend') || has('delta') || has('gauge') || has('aging'); }
+/* Only Ratio Gauge fires two queries in parallel (numerator + denominator). */
+function needsQAll() { return has('gauge'); }
+/* Every KPI/aggregate block (not list/table, which use PagedCollection instead)
+ * shares the same "apply Filter Criteria, then aggregate" helper. */
+function needsAggregateHelper() {
+  return has('stat') || has('metric') || has('gauge') || has('bars') || has('donut') || has('stacked');
+}
 
 /*
  * Which per-block settings stay editable inside FortiSOAR's own Edit dialog.
  *
  * The block *list* (which blocks exist and in what order) is design-time - that is
- * what this tool is for. Everything below is runtime, so a SOC admin can retarget a
- * chart or retitle a tile without regenerating and reinstalling the widget.
+ * what this tool is for. Everything below is runtime, so a SOC admin can retarget,
+ * relabel or refilter a panel without regenerating and reinstalling the widget.
  *
- * "field" style kinds render as real dropdowns in the Edit dialog because the widget
- * has Entity available at runtime - which is strictly better than typing a field name
- * here, where nothing can validate it.
+ * There is deliberately no "time scope" / "only unresolved" / "only unassigned"
+ * setting anywhere: every block that queries records gets one "filter" kind field
+ * instead - a real FortiSOAR Filter Criteria (cs-conditional, with datetime fields
+ * switched to datetime.quick so Relative values like "Today" work). An admin who
+ * wants "unresolved only" just adds that condition to the block's own filter, using
+ * the platform's real filter UI instead of a heuristic this tool would have to guess.
+ *
+ * "anyField" kinds render as real dropdowns in the Edit dialog because the widget has
+ * Entity available at runtime - strictly better than typing a field name here, where
+ * nothing can validate it. Likewise, whether a Group By field is a picklist or a
+ * lookup is auto-detected at runtime, never asked.
  */
-var SCOPE_CHOICES = [
-  { v: 'period', l: 'Configured period' },
-  { v: 'last24h', l: 'Last 24 hours' },
-  { v: 'all', l: 'All time' }
-];
 var WIDTH_CHOICES = [
   { v: 3, l: 'Quarter' }, { v: 4, l: 'Third' }, { v: 6, l: 'Half' },
   { v: 8, l: 'Two-thirds' }, { v: 12, l: 'Full width' }
 ];
-var KIND_CHOICES = [
-  { v: 'picklist', l: 'Picklist' }, { v: 'reference', l: 'Lookup / reference' }, { v: 'plain', l: 'Plain value' }
-];
 
 var F_LABEL = { key: 'label', label: 'Label', kind: 'text' };
-var F_SCOPE = { key: 'scope', label: 'Time scope', kind: 'select', options: SCOPE_CHOICES };
-var F_OPEN = { key: 'onlyOpen', label: 'Only unresolved records', kind: 'bool' };
 var F_WIDTH = { key: 'w', label: 'Width', kind: 'select', options: WIDTH_CHOICES };
-var F_GROUP = [
-  { key: 'field', label: 'Group by field', kind: 'anyField' },
-  { key: 'kind', label: 'Field kind', kind: 'select', options: KIND_CHOICES },
-  { key: 'refAttr', label: 'Display attribute', kind: 'text', showIf: 'reference' }
-];
+function filterField(key, label) {
+  return { key: key, label: label || 'Filter Criteria', kind: 'filter' };
+}
 
 var EDITABLE_SPEC = {
-  stat: [F_LABEL,
-    { key: 'metric', label: 'Metric', kind: 'select', options: [{ v: 'count', l: 'Record count' }, { v: 'oldestAge', l: 'Age of oldest record' }] },
-    F_SCOPE, F_OPEN,
-    { key: 'onlyUnassigned', label: 'Only unassigned', kind: 'bool' },
-    { key: 'ownerField', label: 'Owner field', kind: 'anyField' },
-    { key: 'accent', label: 'Highlight tile', kind: 'bool' }, F_WIDTH],
-  delta: [F_LABEL, F_OPEN,
-    { key: 'goodDirection', label: 'Good direction', kind: 'select', options: [{ v: 'down', l: 'Down is good' }, { v: 'up', l: 'Up is good' }] }, F_WIDTH],
+  stat: [F_LABEL, filterField('query'), { key: 'accent', label: 'Highlight tile', kind: 'bool' }, F_WIDTH],
   metric: [F_LABEL,
     { key: 'field', label: 'Numeric field', kind: 'anyField' },
     { key: 'op', label: 'Aggregate', kind: 'select', options: [{ v: 'avg', l: 'Average' }, { v: 'median', l: 'Median' }, { v: 'sum', l: 'Sum' }, { v: 'max', l: 'Maximum' }, { v: 'min', l: 'Minimum' }] },
     { key: 'format', label: 'Format', kind: 'select', options: [{ v: 'number', l: 'Plain number' }, { v: 'seconds', l: 'Duration (seconds)' }, { v: 'minutes', l: 'Duration (minutes)' }, { v: 'hours', l: 'Duration (hours)' }, { v: 'percent', l: 'Percent' }] },
     { key: 'decimals', label: 'Decimals', kind: 'number' },
-    F_SCOPE, F_OPEN, { key: 'accent', label: 'Highlight tile', kind: 'bool' }, F_WIDTH],
+    filterField('query'),
+    { key: 'accent', label: 'Highlight tile', kind: 'bool' }, F_WIDTH],
   gauge: [F_LABEL,
-    { key: 'numerator', label: 'Numerator', kind: 'select', options: [{ v: 'resolved', l: 'Resolved / closed' }, { v: 'unresolved', l: 'Still open' }, { v: 'assigned', l: 'Assigned' }, { v: 'unassigned', l: 'Unassigned' }] },
-    { key: 'ownerField', label: 'Owner field', kind: 'anyField' },
+    filterField('denominatorQuery', 'Denominator Filter Criteria'),
+    filterField('numeratorQuery', 'Numerator Filter Criteria'),
     { key: 'target', label: 'Target %', kind: 'number' },
-    F_SCOPE, { key: 'accent', label: 'Highlight tile', kind: 'bool' }, F_WIDTH],
-  bars: [F_LABEL].concat(F_GROUP, [F_SCOPE, F_OPEN,
-    { key: 'maxRows', label: 'Max rows', kind: 'number' },
-    { key: 'showRank', label: 'Show rank numbers', kind: 'bool' }, F_WIDTH]),
-  stacked: [F_LABEL].concat(F_GROUP, [F_SCOPE, F_OPEN, F_WIDTH]),
-  donut: [F_LABEL].concat(F_GROUP, [F_SCOPE, F_OPEN,
-    { key: 'legend', label: 'Legend position', kind: 'select', options: [{ v: 'right', l: 'Right' }, { v: 'left', l: 'Left' }, { v: 'top', l: 'Top' }, { v: 'bottom', l: 'Bottom' }] }, F_WIDTH]),
-  trend: [F_LABEL, { key: 'buckets', label: 'Buckets', kind: 'number' }, F_OPEN, F_WIDTH],
-  aging: [F_LABEL, F_OPEN, F_WIDTH],
+    { key: 'accent', label: 'Highlight tile', kind: 'bool' }, F_WIDTH],
+  bars: [F_LABEL,
+    { key: 'field', label: 'Group by field', kind: 'anyField' },
+    filterField('query'),
+    { key: 'maxRows', label: 'Max rows', kind: 'number' }, F_WIDTH],
+  stacked: [F_LABEL,
+    { key: 'field', label: 'Group by field', kind: 'anyField' },
+    filterField('query'), F_WIDTH],
+  donut: [F_LABEL,
+    { key: 'field', label: 'Group by field', kind: 'anyField' },
+    filterField('query'),
+    { key: 'legend', label: 'Legend position', kind: 'select', options: [{ v: 'right', l: 'Right' }, { v: 'left', l: 'Left' }, { v: 'top', l: 'Top' }, { v: 'bottom', l: 'Bottom' }] }, F_WIDTH],
   list: [F_LABEL,
     { key: 'subtitle', label: 'Subtitle', kind: 'text' },
     { key: 'sortField', label: 'Sort field', kind: 'anyField' },
     { key: 'sortDir', label: 'Sort direction', kind: 'select', options: [{ v: 'ASC', l: 'Oldest first' }, { v: 'DESC', l: 'Newest first' }] },
     { key: 'limit', label: 'Row limit', kind: 'number' },
     { key: 'secondaryField', label: 'Secondary field', kind: 'anyField' },
-    F_SCOPE, F_OPEN, { key: 'showAge', label: 'Show age + urgency', kind: 'bool' }, F_WIDTH],
+    { key: 'showAge', label: 'Show age + urgency (uses Sort Field)', kind: 'bool' },
+    filterField('query'), F_WIDTH],
   table: [F_LABEL,
     { key: 'columns', label: 'Columns (field:Label, ...)', kind: 'text' },
     { key: 'sortField', label: 'Sort field', kind: 'anyField' },
     { key: 'sortDir', label: 'Sort direction', kind: 'select', options: [{ v: 'DESC', l: 'Newest first' }, { v: 'ASC', l: 'Oldest first' }] },
     { key: 'limit', label: 'Row limit', kind: 'number' },
-    F_SCOPE, F_OPEN, F_WIDTH],
+    filterField('query'), F_WIDTH],
   header: [{ key: 'text', label: 'Text', kind: 'text' }, F_WIDTH]
 };
+
+/* Serializes a field's showIf condition - either { key, truthy: true } (show when
+ * another setting is truthy) or { key, value: x | [x, y] } (show when it equals one
+ * of the given values) - into the object literal source emitted into blockMeta.
+ * Nothing in EDITABLE_SPEC uses this today (the field-kind/scope questions it used
+ * to gate are gone), but it costs nothing to leave in for future per-block options. */
+function showIfExpr(showIf) {
+  var parts = ['key: ' + jsStr(showIf.key)];
+  if (showIf.truthy) {
+    parts.push('truthy: true');
+  } else if (Array.isArray(showIf.value)) {
+    parts.push('value: [' + showIf.value.map(jsStr).join(', ') + ']');
+  } else {
+    parts.push('value: ' + jsStr(showIf.value));
+  }
+  return '{ ' + parts.join(', ') + ' }';
+}
 
 function editableKeys(type) {
   return (EDITABLE_SPEC[type] || []).map(function (f) { return f.key; });
@@ -121,10 +133,11 @@ function blockSettings(b) {
   return out;
 }
 
-/* Filters are now assembled at runtime from the saved settings, so changing the
- * time scope or the "only unresolved" toggle in FortiSOAR takes effect immediately. */
-function filtersExpr(b) {
-  return '_blockFilters(settings)';
+/* Any JS value (including nested objects/arrays, e.g. a Filter Criteria's default
+ * { filters: [] }) as a literal expression - JSON's syntax is a valid JS literal, so
+ * this covers every default value type without hand-rolling key/value pair joins. */
+function litExpr(value) {
+  return value === undefined ? 'null' : JSON.stringify(value);
 }
 
 /* ------------------------------ info.json ------------------------------ */
@@ -151,11 +164,12 @@ function genInfoJson() {
 
 /* --------------------------- view.controller.js -------------------------- */
 function genViewController() {
-  var w = design.widget;
   var L = [];
   var deps = ['$scope', 'config', '$resource', 'API', 'currentPermissionsService', '$interval', '_'];
-  if (needsPaged()) { deps.splice(4, 0, 'Query', 'PagedCollection'); }
-  if (needsMetadata()) { deps.push('Entity', 'modelMetadatasService', 'appModulesService', '$state', '$filter'); }
+  if (needsQuery()) { deps.push('Query'); }
+  if (needsPaged()) { deps.push('PagedCollection'); }
+  if (needsEntity() || needsOpenRecord()) { deps.push('Entity'); }
+  if (needsOpenRecord()) { deps.push('modelMetadatasService', 'appModulesService', '$state', '$filter'); }
   if (needsQAll()) { deps.push('$q'); }
 
   L.push('"use strict";');
@@ -172,28 +186,9 @@ function genViewController() {
   L.push('    ' + deps.join(',\n    '));
   L.push('  ) {');
   L.push('    var refreshTimer;');
-  L.push('');
-  L.push('    var PERIOD_MS = {');
-  L.push('      "24h": 24 * 60 * 60 * 1000,');
-  L.push('      "7d": 7 * 24 * 60 * 60 * 1000,');
-  L.push('      "30d": 30 * 24 * 60 * 60 * 1000,');
-  L.push('      "90d": 90 * 24 * 60 * 60 * 1000,');
-  L.push('    };');
-  L.push('    var PERIOD_LABELS = {');
-  L.push('      "24h": "Last 24 Hours",');
-  L.push('      "7d": "Last 7 Days",');
-  L.push('      "30d": "Last 30 Days",');
-  L.push('      "90d": "Last 90 Days",');
-  L.push('      all: "All Time",');
-  L.push('    };');
 
-  if (needsNotClosed()) {
-    L.push('    // A record counts as open unless its status/state itemValue matches one of');
-    L.push('    // these keywords. Tune to match your tenant naming (e.g. "false positive").');
-    L.push('    var CLOSED_STATE_KEYWORDS = ["closed", "resolved", "complete", "done", "remediated"];');
-    L.push('    var STATUS_FIELD = "status";');
-  }
   if (needsColorFor()) {
+    L.push('');
     L.push('    // Security dashboards should color by meaning, not by position: a bucket named');
     L.push('    // "Critical" is always red regardless of where it lands in the result set.');
     L.push('    // Unrecognised labels fall back to the categorical ramp below.');
@@ -205,17 +200,6 @@ function genViewController() {
     L.push('    var COLOR_PALETTE = [');
     L.push('      ' + PALETTE_COLORS.slice(0, 5).map(jsStr).join(', ') + ',');
     L.push('      ' + PALETTE_COLORS.slice(5).map(jsStr).join(', ') + ',');
-    L.push('    ];');
-  }
-  if (has('aging')) {
-    L.push('    // Age bands are measured against the Time Range Field and deliberately ignore');
-    L.push('    // the search period, so an ageing backlog never silently drops out of view.');
-    L.push('    var AGING_BANDS = [');
-    L.push('      { label: "< 1h", fromH: 0, toH: 1, color: "#2ea043" },');
-    L.push('      { label: "1-4h", fromH: 1, toH: 4, color: "#3fa7d6" },');
-    L.push('      { label: "4-24h", fromH: 4, toH: 24, color: "#e3b341" },');
-    L.push('      { label: "1-7d", fromH: 24, toH: 168, color: "#e8663d" },');
-    L.push('      { label: "> 7d", fromH: 168, toH: null, color: "#d9364c" },');
     L.push('    ];');
   }
   if (has('donut')) {
@@ -235,19 +219,11 @@ function genViewController() {
   L.push('    // new setting existed still gets a sane value instead of undefined.');
   L.push('    var BLOCK_DEFAULTS = {');
   design.blocks.forEach(function (b) {
-    var s = blockSettings(b);
-    var pairs = Object.keys(s).map(function (k) {
-      var v = s[k];
-      return k + ': ' + (typeof v === 'string' ? jsStr(v) : typeof v === 'boolean' ? String(v) : v === null || v === undefined ? 'null' : v);
-    });
-    L.push('      ' + b.id + ': { ' + pairs.join(', ') + ' },');
+    L.push('      ' + b.id + ': ' + litExpr(blockSettings(b)) + ',');
   });
   L.push('    };');
   L.push('');
   L.push('    $scope.config = angular.copy(config);');
-  L.push('    if (!$scope.config.dateField) {');
-  L.push('      $scope.config.dateField = ' + jsStr(w.dateField) + ';');
-  L.push('    }');
   L.push('    $scope.config.blocks = $scope.config.blocks || {};');
   L.push('    angular.forEach(BLOCK_DEFAULTS, function (defaults, blockId) {');
   L.push('      $scope.config.blocks[blockId] = angular.extend({}, defaults, $scope.config.blocks[blockId]);');
@@ -256,28 +232,23 @@ function genViewController() {
   L.push('      $scope.page !== undefined &&');
   L.push('      $scope.page.toLowerCase() !== "dashboard" &&');
   L.push('      $scope.page.toLowerCase() !== "reporting";');
-  L.push('    $scope.periodLabel = PERIOD_LABELS[$scope.config.period] || PERIOD_LABELS.all;');
   L.push('    $scope.blocks = {');
   design.blocks.forEach(function (b) {
     if (b.type === 'header') return;
     if (b.type === 'stat' || b.type === 'metric') L.push('      ' + b.id + ': { loading: false, value: null },');
-    else if (b.type === 'delta') L.push('      ' + b.id + ': { loading: false, value: null, previous: null, changePercent: null, direction: "flat" },');
     else if (b.type === 'gauge') L.push('      ' + b.id + ': { loading: false, percent: null, matched: 0, total: 0, dash: "0 125.66", color: "#7d8b9e" },');
-    else if (b.type === 'bars' || b.type === 'aging') L.push('      ' + b.id + ': { loading: false, rows: [] },');
+    else if (b.type === 'bars') L.push('      ' + b.id + ': { loading: false, rows: [] },');
     else if (b.type === 'stacked') L.push('      ' + b.id + ': { loading: false, segments: [], total: 0 },');
     else if (b.type === 'donut') L.push('      ' + b.id + ': { loading: false, slices: [], total: 0 },');
-    else if (b.type === 'trend') L.push('      ' + b.id + ': { loading: false, path: null, buckets: [] },');
     else if (b.type === 'list' || b.type === 'table') L.push('      ' + b.id + ': { loading: false, rows: [] },');
   });
   L.push('    };');
   L.push('    $scope.refresh = _refreshAll;');
-  if (needsMetadata()) {
+  if (needsOpenRecord()) {
     L.push('    $scope.titleField = "name";');
     L.push('    $scope.openRecord = openRecord;');
   }
-  if (needsMetricFmt()) {
-    L.push('    $scope.formatMetric = _formatMetric;');
-  }
+  if (needsMetricFmt()) { L.push('    $scope.formatMetric = _formatMetric;'); }
   if (has('donut')) {
     L.push('    $scope.ringMidRadius = (OUTER_RADIUS + INNER_RADIUS) / 2;');
     L.push('    $scope.ringThickness = OUTER_RADIUS - INNER_RADIUS;');
@@ -286,6 +257,7 @@ function genViewController() {
     L.push('    $scope.formatAge = _formatAge;');
     L.push('    $scope.ageUrgencyClass = _ageUrgencyClass;');
   }
+
   L.push('');
   L.push('    function init() {');
   L.push('      if (!$scope.config.module) {');
@@ -296,7 +268,7 @@ function genViewController() {
   L.push('        $scope.unauthorized = true;');
   L.push('        return;');
   L.push('      }');
-  if (needsMetadata()) {
+  if (needsEntity() || needsOpenRecord()) {
     L.push('      _loadMetadata();');
   } else {
     L.push('      _refreshAll();');
@@ -305,14 +277,30 @@ function genViewController() {
   L.push('    }');
   L.push('');
 
-  if (needsMetadata()) {
-    L.push('    // Resolves the module display attribute so list/table rows show the same title');
-    L.push('    // column the platform grid would use.');
+  if (needsEntity() || needsOpenRecord()) {
     L.push('    function _loadMetadata() {');
     L.push('      var entity = new Entity($scope.config.module);');
     L.push('      entity.loadFields().then(function () {');
-    L.push('        var meta = modelMetadatasService.getMetadataByModuleType($scope.config.module);');
-    L.push('        $scope.titleField = (meta && meta.displayName) || "name";');
+    if (needsEntity()) {
+      L.push('        // Picklist and lookup fields store an IRI as their raw value, so a Group By');
+      L.push('        // query must target a sub-attribute to resolve the human-readable bucket.');
+      L.push('        // Detected here from the module\'s real schema rather than asked up front.');
+      L.push('        var relationshipFields = entity.getRelationshipFields();');
+      L.push('        $scope.fieldSuffix = {};');
+      L.push('        angular.forEach(entity.fields, function (field, name) {');
+      L.push('          if (field.type === "picklist") {');
+      L.push('            $scope.fieldSuffix[name] = "itemValue";');
+      L.push('          } else if (relationshipFields[name]) {');
+      L.push('            // Best-effort guess at the display attribute - verify against your');
+      L.push('            // instance\'s schema if a lookup module doesn\'t use "name".');
+      L.push('            $scope.fieldSuffix[name] = "name";');
+      L.push('          }');
+      L.push('        });');
+    }
+    if (needsOpenRecord()) {
+      L.push('        var meta = modelMetadatasService.getMetadataByModuleType($scope.config.module);');
+      L.push('        $scope.titleField = (meta && meta.displayName) || "name";');
+    }
     L.push('      }).finally(function () {');
     L.push('        _refreshAll();');
     L.push('        _applyAutoRefresh();');
@@ -321,82 +309,31 @@ function genViewController() {
     L.push('');
   }
 
-  L.push('    // Records within the configured period, measured against the chosen Time Range');
-  L.push('    // Field. Returns [] for period "all" (no lower bound).');
-  L.push('    function _periodFilters() {');
-  L.push('      var ms = PERIOD_MS[$scope.config.period];');
-  L.push('      if (!ms) {');
-  L.push('        return [];');
-  L.push('      }');
-  L.push('      var since = new Date(Date.now() - ms).toISOString();');
-  L.push('      return [{ field: $scope.config.dateField, operator: "gte", value: since }];');
-  L.push('    }');
-  L.push('');
-  L.push('    // Every block assembles its filters from its own saved settings, so retargeting');
-  L.push('    // a block in the Edit dialog takes effect on the next refresh with no code change.');
-  L.push('    function _blockFilters(settings) {');
-  L.push('      var filters;');
-  L.push('      if (settings.scope === "all") {');
-  L.push('        filters = [];');
-  L.push('      } else if (settings.scope === "last24h") {');
-  L.push('        filters = [');
-  L.push('          { field: $scope.config.dateField, operator: "gte", value: new Date(Date.now() - 86400000).toISOString() },');
-  L.push('        ];');
-  L.push('      } else {');
-  L.push('        filters = _periodFilters();');
-  L.push('      }');
-  if (needsNotClosed()) {
-    L.push('      if (settings.onlyOpen) {');
-    L.push('        filters = filters.concat(_notClosedFilters());');
-    L.push('      }');
-  }
-  L.push('      if (settings.onlyUnassigned && settings.ownerField) {');
-  L.push('        filters = filters.concat([{ field: settings.ownerField, operator: "isnull", value: true }]);');
-  L.push('      }');
-  L.push('      return filters;');
-  L.push('    }');
-  L.push('');
   if (needsColorFor()) {
-    L.push('    // Picklist and lookup fields store an IRI, so grouping targets a sub-attribute');
-    L.push('    // to resolve the human-readable bucket.');
-    L.push('    function _groupField(settings) {');
-    L.push('      if (settings.kind === "picklist") {');
-    L.push('        return settings.field + ".itemValue";');
-    L.push('      }');
-    L.push('      if (settings.kind === "reference") {');
-    L.push('        return settings.field + "." + (settings.refAttr || "name");');
-    L.push('      }');
-    L.push('      return settings.field;');
+    L.push('    function _groupField(fieldName) {');
+    L.push('      var suffix = $scope.fieldSuffix[fieldName];');
+    L.push('      return suffix ? fieldName + "." + suffix : fieldName;');
     L.push('    }');
     L.push('');
   }
 
-  if (needsNotClosed()) {
-    L.push('    function _notClosedFilters() {');
-    L.push('      return _.map(CLOSED_STATE_KEYWORDS, function (keyword) {');
-    L.push('        return {');
-    L.push('          field: STATUS_FIELD + ".itemValue",');
-    L.push('          operator: "notlike",');
-    L.push('          value: "%" + keyword + "%",');
-    L.push('        };');
-    L.push('      });');
+  if (needsAggregateHelper()) {
+    L.push('    // Turns a block\'s saved Filter Criteria into a request payload and attaches');
+    L.push('    // the given aggregates. This is the one place every KPI/chart block goes');
+    L.push('    // through, so retargeting a block\'s filter in the Edit dialog just works.');
+    L.push('    function _aggregateQuery(queryConfig, aggregates) {');
+    L.push('      var payload = new Query(angular.copy(queryConfig || { filters: [] })).getQuery(true);');
+    L.push('      payload.aggregates = aggregates;');
+    L.push('      return $resource(API.QUERY + $scope.config.module).save(payload).$promise;');
     L.push('    }');
     L.push('');
-  }
-
-  if (needsCount()) {
-    L.push('    function _countQuery(filters) {');
-    L.push('      var payload = {');
-    L.push('        logic: "AND",');
-    L.push('        filters: filters,');
-    L.push('        aggregates: [{ operator: "countdistinct", field: "uuid", alias: "count" }],');
-    L.push('      };');
-    L.push('      return $resource(API.QUERY + $scope.config.module)');
-    L.push('        .save(payload)');
-    L.push('        .$promise.then(function (result) {');
+    L.push('    function _countQuery(queryConfig) {');
+    L.push('      return _aggregateQuery(queryConfig, [{ operator: "countdistinct", field: "uuid", alias: "count" }]).then(');
+    L.push('        function (result) {');
     L.push('          var rows = result["hydra:member"] || [];');
     L.push('          return (rows[0] && rows[0].count) || 0;');
-    L.push('        });');
+    L.push('        }');
+    L.push('      );');
     L.push('    }');
     L.push('');
   }
@@ -583,27 +520,6 @@ function genViewController() {
     L.push('');
   }
 
-  if (has('trend')) {
-    L.push('    function _buildTrendPath(buckets) {');
-    L.push('      var width = 100;');
-    L.push('      var height = 32;');
-    L.push('      var pad = 3;');
-    L.push('      var maxCount = _.reduce(buckets, function (m, b) { return Math.max(m, b.count); }, 0);');
-    L.push('      var n = buckets.length;');
-    L.push('      var points = _.map(buckets, function (b, i) {');
-    L.push('        var x = n > 1 ? (i / (n - 1)) * width : width / 2;');
-    L.push('        var y = maxCount ? height - pad - (b.count / maxCount) * (height - pad * 2) : height - pad;');
-    L.push('        return { x: x, y: y, count: b.count, start: b.start };');
-    L.push('      });');
-    L.push('      var line = _.map(points, function (p) {');
-    L.push('        return p.x.toFixed(2) + "," + p.y.toFixed(2);');
-    L.push('      }).join(" ");');
-    L.push('      var area = line + " " + width.toFixed(2) + "," + height.toFixed(2) + " 0.00," + height.toFixed(2);');
-    L.push('      return { line: line, area: area, points: points, maxCount: maxCount };');
-    L.push('    }');
-    L.push('');
-  }
-
   if (needsAge()) {
     L.push('    function _formatAge(ms) {');
     L.push('      if (ms === null || ms === undefined || ms < 0) {');
@@ -637,7 +553,7 @@ function genViewController() {
     L.push('');
   }
 
-  if (needsMetadata()) {
+  if (needsOpenRecord()) {
     L.push('    function openRecord(id) {');
     L.push('      var state = appModulesService.getState($scope.config.module);');
     L.push('      $state.go(state, {');
@@ -673,10 +589,10 @@ function genViewController() {
 }
 
 /*
- * Loaders read their tunables from $scope.config.blocks.<id> rather than from baked
- * literals, so the Edit dialog can retarget them at runtime. Only the block's *type*
- * (and, for stat tiles, whether it counts records or measures age) is fixed here,
- * because those select which query engine runs.
+ * Loaders read their tunables (including the Filter Criteria itself) from
+ * $scope.config.blocks.<id> rather than from baked literals, so the Edit dialog can
+ * retarget them at runtime with no code change. Only the block's *type* is fixed
+ * here, because that selects which query engine runs.
  */
 function genBlockLoader(b) {
   var L = [];
@@ -687,86 +603,13 @@ function genBlockLoader(b) {
     '      var settings = $scope.config.blocks.' + id + ';'
   ];
 
-  if (b.type === 'stat' && b.metric === 'count') {
+  if (b.type === 'stat') {
     L = L.concat(open);
     L.push('      block.loading = true;');
-    L.push('      _countQuery(_blockFilters(settings))');
+    L.push('      _countQuery(settings.query)');
     L.push('        .then(');
     L.push('          function (count) { block.value = count; },');
     L.push('          function () { block.value = 0; }');
-    L.push('        )');
-    L.push('        .finally(function () { block.loading = false; });');
-    L.push('    }');
-  }
-
-  if (b.type === 'stat' && b.metric === 'oldestAge') {
-    L.push('    // Age of the single longest-waiting matching record.');
-    L = L.concat(open);
-    L.push('      block.loading = true;');
-    L.push('      var pagedCollection = new PagedCollection($scope.config.module, null, { $limit: 1 });');
-    L.push('      pagedCollection.query = new Query({');
-    L.push('        logic: "AND",');
-    L.push('        filters: _blockFilters(settings),');
-    L.push('        sort: [{ field: $scope.config.dateField, direction: "ASC" }],');
-    L.push('        limit: 1,');
-    L.push('        __selectFields: [$scope.config.dateField],');
-    L.push('      });');
-    L.push('      pagedCollection');
-    L.push('        .loadGridRecord()');
-    L.push('        .then(');
-    L.push('          function () {');
-    L.push('            var row = pagedCollection.fieldRows[0];');
-    L.push('            var raw = row && row[$scope.config.dateField] && row[$scope.config.dateField].value;');
-    L.push('            block.value = raw ? Date.now() - new Date(raw).getTime() : null;');
-    L.push('          },');
-    L.push('          function () { block.value = null; }');
-    L.push('        )');
-    L.push('        .finally(function () { block.loading = false; });');
-    L.push('    }');
-  }
-
-  if (b.type === 'delta') {
-    L.push('    // Period-over-period comparison: the configured window against the window of');
-    L.push('    // the same length immediately before it. Meaningless for period "all".');
-    L = L.concat(open);
-    L.push('      var totalMs = PERIOD_MS[$scope.config.period];');
-    L.push('      if (!totalMs) {');
-    L.push('        block.value = null;');
-    L.push('        block.changePercent = null;');
-    L.push('        return;');
-    L.push('      }');
-    L.push('      block.loading = true;');
-    L.push('      var now = Date.now();');
-    L.push('      var currentFrom = new Date(now - totalMs).toISOString();');
-    L.push('      var previousFrom = new Date(now - totalMs * 2).toISOString();');
-    L.push('      var extra = settings.onlyOpen ? _notClosedFilters() : [];');
-    L.push('      var currentFilters = [');
-    L.push('        { field: $scope.config.dateField, operator: "gte", value: currentFrom },');
-    L.push('      ].concat(extra);');
-    L.push('      var previousFilters = [');
-    L.push('        { field: $scope.config.dateField, operator: "gte", value: previousFrom },');
-    L.push('        { field: $scope.config.dateField, operator: "lt", value: currentFrom },');
-    L.push('      ].concat(extra);');
-    L.push('      $q.all([_countQuery(currentFilters), _countQuery(previousFilters)])');
-    L.push('        .then(');
-    L.push('          function (results) {');
-    L.push('            block.value = results[0];');
-    L.push('            block.previous = results[1];');
-    L.push('            // With no baseline a percentage is undefined rather than "100% up".');
-    L.push('            block.changePercent = results[1]');
-    L.push('              ? Math.round(((results[0] - results[1]) / results[1]) * 1000) / 10');
-    L.push('              : null;');
-    L.push('            var delta = results[0] - results[1];');
-    L.push('            block.direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";');
-    L.push('            block.cssClass =');
-    L.push('              block.direction === "flat"');
-    L.push('                ? "' + prefix() + '-delta-flat"');
-    L.push('                : block.direction === settings.goodDirection');
-    L.push('                ? "' + prefix() + '-delta-good"');
-    L.push('                : "' + prefix() + '-delta-bad";');
-    L.push('            block.arrow = block.direction === "up" ? "\\u25B2" : block.direction === "down" ? "\\u25BC" : "\\u25AC";');
-    L.push('          },');
-    L.push('          function () { block.value = null; block.changePercent = null; }');
     L.push('        )');
     L.push('        .finally(function () { block.loading = false; });');
     L.push('    }');
@@ -777,14 +620,8 @@ function genBlockLoader(b) {
     L.push('    // the raw number; _formatMetric turns it into a duration when appropriate.');
     L = L.concat(open);
     L.push('      block.loading = true;');
-    L.push('      var payload = {');
-    L.push('        logic: "AND",');
-    L.push('        filters: _blockFilters(settings),');
-    L.push('        aggregates: [{ operator: settings.op, field: settings.field, alias: "value" }],');
-    L.push('      };');
-    L.push('      $resource(API.QUERY + $scope.config.module)');
-    L.push('        .save(payload)');
-    L.push('        .$promise.then(');
+    L.push('      _aggregateQuery(settings.query, [{ operator: settings.op, field: settings.field, alias: "value" }])');
+    L.push('        .then(');
     L.push('          function (result) {');
     L.push('            var rows = result["hydra:member"] || [];');
     L.push('            block.value = rows[0] ? rows[0].value : null;');
@@ -796,26 +633,16 @@ function genBlockLoader(b) {
   }
 
   if (b.type === 'gauge') {
-    L.push('    // Ratio against every record in scope. "Resolved" is derived as total minus');
-    L.push('    // still-open, because expressing it directly would need an OR group and the');
-    L.push('    // filter list is a flat AND.');
+    L.push('    // Percentage = (records matching Numerator Filter Criteria) / (records');
+    L.push('    // matching Denominator Filter Criteria). Both are independent, admin-owned');
+    L.push('    // filters - e.g. denominator = everything, numerator = Status is Resolved.');
     L = L.concat(open);
     L.push('      block.loading = true;');
-    L.push('      var base = _blockFilters(settings);');
-    L.push('      var numeratorFilters;');
-    L.push('      if (settings.numerator === "unassigned" || settings.numerator === "assigned") {');
-    L.push('        numeratorFilters = base.concat([');
-    L.push('          { field: settings.ownerField, operator: "isnull", value: settings.numerator === "unassigned" },');
-    L.push('        ]);');
-    L.push('      } else {');
-    L.push('        numeratorFilters = base.concat(_notClosedFilters());');
-    L.push('      }');
-    L.push('      var invert = settings.numerator === "resolved";');
-    L.push('      $q.all([_countQuery(base), _countQuery(numeratorFilters)])');
+    L.push('      $q.all([_countQuery(settings.denominatorQuery), _countQuery(settings.numeratorQuery)])');
     L.push('        .then(');
     L.push('          function (results) {');
     L.push('            var total = results[0];');
-    L.push('            var matched = invert ? total - results[1] : results[1];');
+    L.push('            var matched = results[1];');
     L.push('            block.total = total;');
     L.push('            block.matched = matched;');
     L.push('            block.percent = total ? Math.round((matched / total) * 1000) / 10 : null;');
@@ -837,165 +664,14 @@ function genBlockLoader(b) {
     L.push('    }');
   }
 
-  if (b.type === 'aging') {
-    L.push('    // One count per age band. Bands are absolute ages, so this deliberately does');
-    L.push('    // not apply the configured search period.');
-    L = L.concat(open);
-    L.push('      block.loading = true;');
-    L.push('      var now = Date.now();');
-    L.push('      var extra = settings.onlyOpen ? _notClosedFilters() : [];');
-    L.push('      var results = new Array(AGING_BANDS.length);');
-    L.push('      var promises = _.map(AGING_BANDS, function (band, index) {');
-    L.push('        var filters = [');
-    L.push('          { field: $scope.config.dateField, operator: "lte", value: new Date(now - band.fromH * 3600000).toISOString() },');
-    L.push('        ];');
-    L.push('        if (band.toH !== null) {');
-    L.push('          filters.push({ field: $scope.config.dateField, operator: "gt", value: new Date(now - band.toH * 3600000).toISOString() });');
-    L.push('        }');
-    L.push('        return _countQuery(filters.concat(extra)).then(');
-    L.push('          function (count) { results[index] = count; },');
-    L.push('          function () { results[index] = 0; }');
-    L.push('        );');
-    L.push('      });');
-    L.push('      $q.all(promises)');
-    L.push('        .then(function () {');
-    L.push('          var maxCount = _.reduce(results, function (m, c) { return Math.max(m, c); }, 0);');
-    L.push('          block.rows = _.map(AGING_BANDS, function (band, index) {');
-    L.push('            return {');
-    L.push('              label: band.label,');
-    L.push('              value: results[index],');
-    L.push('              barPercent: maxCount ? Math.round((results[index] / maxCount) * 1000) / 10 : 0,');
-    L.push('              color: band.color,');
-    L.push('            };');
-    L.push('          });');
-    L.push('        })');
-    L.push('        .finally(function () { block.loading = false; });');
-    L.push('    }');
-  }
-
-  if (b.type === 'trend') {
-    L.push('    // The Query API has no date-histogram operator, so this fans out one');
-    L.push('    // countdistinct query per equal-width time slice and assembles a sparkline.');
-    L.push('    // Skipped for period "all" (no fixed range to slice).');
-    L = L.concat(open);
-    L.push('      var totalMs = PERIOD_MS[$scope.config.period];');
-    L.push('      if (!totalMs) {');
-    L.push('        block.path = null;');
-    L.push('        block.buckets = [];');
-    L.push('        return;');
-    L.push('      }');
-    L.push('      block.loading = true;');
-    L.push('      var bucketCount = Math.max(3, Math.min(24, settings.buckets || 12));');
-    L.push('      var bucketMs = totalMs / bucketCount;');
-    L.push('      var now = Date.now();');
-    L.push('      var periodStart = now - totalMs;');
-    L.push('      var extra = settings.onlyOpen ? _notClosedFilters() : [];');
-    L.push('      var buckets = new Array(bucketCount);');
-    L.push('      var promises = [];');
-    L.push('');
-    L.push('      var loadBucket = function (index) {');
-    L.push('        var bucketStart = periodStart + index * bucketMs;');
-    L.push('        var bucketEnd = index === bucketCount - 1 ? now : periodStart + (index + 1) * bucketMs;');
-    L.push('        var filters = [');
-    L.push('          { field: $scope.config.dateField, operator: "gte", value: new Date(bucketStart).toISOString() },');
-    L.push('          { field: $scope.config.dateField, operator: "lt", value: new Date(bucketEnd).toISOString() },');
-    L.push('        ].concat(extra);');
-    L.push('        return _countQuery(filters).then(');
-    L.push('          function (count) { buckets[index] = { start: bucketStart, count: count }; },');
-    L.push('          function () { buckets[index] = { start: bucketStart, count: 0 }; }');
-    L.push('        );');
-    L.push('      };');
-    L.push('');
-    L.push('      for (var i = 0; i < bucketCount; i++) {');
-    L.push('        promises.push(loadBucket(i));');
-    L.push('      }');
-    L.push('');
-    L.push('      $q.all(promises)');
-    L.push('        .then(function () {');
-    L.push('          block.buckets = buckets;');
-    L.push('          block.path = _buildTrendPath(buckets);');
-    L.push('        })');
-    L.push('        .finally(function () { block.loading = false; });');
-    L.push('    }');
-  }
-
-  if (b.type === 'list') {
-    L = L.concat(open);
-    L.push('      block.loading = true;');
-    L.push('      var selectFields = _.compact([');
-    L.push('        $scope.titleField,');
-    L.push('        settings.secondaryField,');
-    L.push('        $scope.config.dateField,');
-    L.push('      ]);');
-    L.push('      var limit = settings.limit || 8;');
-    L.push('      var pagedCollection = new PagedCollection($scope.config.module, null, { $limit: limit });');
-    L.push('      pagedCollection.query = new Query({');
-    L.push('        logic: "AND",');
-    L.push('        filters: _blockFilters(settings),');
-    L.push('        sort: [{ field: settings.sortField || $scope.config.dateField, direction: settings.sortDir }],');
-    L.push('        limit: limit,');
-    L.push('        __selectFields: selectFields,');
-    L.push('      });');
-    L.push('      pagedCollection');
-    L.push('        .loadGridRecord()');
-    L.push('        .then(');
-    L.push('          function () {');
-    L.push('            block.rows = _.map(pagedCollection.fieldRows, function (row) {');
-    L.push('              if (settings.showAge) {');
-    L.push('                var raw = row[$scope.config.dateField] && row[$scope.config.dateField].value;');
-    L.push('                var ageMs = raw ? Date.now() - new Date(raw).getTime() : null;');
-    L.push('                row.__ageLabel = _formatAge(ageMs);');
-    L.push('                row.__urgency = _ageUrgencyClass(ageMs);');
-    L.push('              }');
-    L.push('              return row;');
-    L.push('            });');
-    L.push('          },');
-    L.push('          function () { block.rows = []; }');
-    L.push('        )');
-    L.push('        .finally(function () { block.loading = false; });');
-    L.push('    }');
-  }
-
-  if (b.type === 'table') {
-    L = L.concat(open);
-    L.push('      block.loading = true;');
-    L.push('      block.columns = _parseColumns(settings.columns);');
-    L.push('      var selectFields = _.compact([$scope.titleField].concat(');
-    L.push('        _.map(block.columns, function (col) { return col.field; })');
-    L.push('      ));');
-    L.push('      var limit = settings.limit || 8;');
-    L.push('      var pagedCollection = new PagedCollection($scope.config.module, null, { $limit: limit });');
-    L.push('      pagedCollection.query = new Query({');
-    L.push('        logic: "AND",');
-    L.push('        filters: _blockFilters(settings),');
-    L.push('        sort: [{ field: settings.sortField || $scope.config.dateField, direction: settings.sortDir }],');
-    L.push('        limit: limit,');
-    L.push('        __selectFields: selectFields,');
-    L.push('      });');
-    L.push('      pagedCollection');
-    L.push('        .loadGridRecord()');
-    L.push('        .then(');
-    L.push('          function () { block.rows = pagedCollection.fieldRows; },');
-    L.push('          function () { block.rows = []; }');
-    L.push('        )');
-    L.push('        .finally(function () { block.loading = false; });');
-    L.push('    }');
-  }
-
   if (b.type === 'bars' || b.type === 'donut' || b.type === 'stacked') {
     L = L.concat(open);
     L.push('      block.loading = true;');
-    L.push('      var payload = {');
-    L.push('        logic: "AND",');
-    L.push('        filters: _blockFilters(settings),');
-    L.push('        aggregates: [');
-    L.push('          { operator: "groupby", field: _groupField(settings), alias: "groupKey" },');
-    L.push('          { operator: "countdistinct", field: "uuid", alias: "rCount" },');
-    L.push('        ],');
-    L.push('      };');
-    L.push('      $resource(API.QUERY + $scope.config.module)');
-    L.push('        .save(payload)');
-    L.push('        .$promise.then(');
+    L.push('      _aggregateQuery(settings.query, [');
+    L.push('        { operator: "groupby", field: _groupField(settings.field), alias: "groupKey" },');
+    L.push('        { operator: "countdistinct", field: "uuid", alias: "rCount" },');
+    L.push('      ])');
+    L.push('        .then(');
     L.push('          function (result) {');
     if (b.type === 'bars') {
       L.push('            block.rows = _buildBars(result["hydra:member"] || [], settings.maxRows);');
@@ -1014,6 +690,67 @@ function genBlockLoader(b) {
     } else {
       L.push('          function () { block.slices = []; block.total = 0; }');
     }
+    L.push('        )');
+    L.push('        .finally(function () { block.loading = false; });');
+    L.push('    }');
+  }
+
+  if (b.type === 'list') {
+    L = L.concat(open);
+    L.push('      block.loading = true;');
+    L.push('      var selectFields = _.compact([$scope.titleField, settings.secondaryField, settings.sortField]);');
+    L.push('      var limit = settings.limit || 8;');
+    L.push('      var queryConfig = angular.extend({}, settings.query, {');
+    L.push('        limit: limit,');
+    L.push('        __selectFields: selectFields,');
+    L.push('      });');
+    L.push('      if (settings.sortField) {');
+    L.push('        queryConfig.sort = [{ field: settings.sortField, direction: settings.sortDir }];');
+    L.push('      }');
+    L.push('      var pagedCollection = new PagedCollection($scope.config.module, null, { $limit: limit });');
+    L.push('      pagedCollection.query = new Query(queryConfig);');
+    L.push('      pagedCollection');
+    L.push('        .loadGridRecord()');
+    L.push('        .then(');
+    L.push('          function () {');
+    L.push('            block.rows = _.map(pagedCollection.fieldRows, function (row) {');
+    L.push('              if (settings.showAge && settings.sortField) {');
+    L.push('                var raw = row[settings.sortField] && row[settings.sortField].value;');
+    L.push('                var ageMs = raw ? Date.now() - new Date(raw).getTime() : null;');
+    L.push('                row.__ageLabel = _formatAge(ageMs);');
+    L.push('                row.__urgency = _ageUrgencyClass(ageMs);');
+    L.push('              }');
+    L.push('              return row;');
+    L.push('            });');
+    L.push('          },');
+    L.push('          function () { block.rows = []; }');
+    L.push('        )');
+    L.push('        .finally(function () { block.loading = false; });');
+    L.push('    }');
+  }
+
+  if (b.type === 'table') {
+    L = L.concat(open);
+    L.push('      block.loading = true;');
+    L.push('      block.columns = _parseColumns(settings.columns);');
+    L.push('      var selectFields = _.compact(');
+    L.push('        [$scope.titleField].concat(_.map(block.columns, function (col) { return col.field; }))');
+    L.push('      );');
+    L.push('      var limit = settings.limit || 8;');
+    L.push('      var queryConfig = angular.extend({}, settings.query, {');
+    L.push('        limit: limit,');
+    L.push('        __selectFields: selectFields,');
+    L.push('      });');
+    L.push('      if (settings.sortField) {');
+    L.push('        queryConfig.sort = [{ field: settings.sortField, direction: settings.sortDir }];');
+    L.push('      }');
+    L.push('      var pagedCollection = new PagedCollection($scope.config.module, null, { $limit: limit });');
+    L.push('      pagedCollection.query = new Query(queryConfig);');
+    L.push('      pagedCollection');
+    L.push('        .loadGridRecord()');
+    L.push('        .then(');
+    L.push('          function () { block.rows = pagedCollection.fieldRows; },');
+    L.push('          function () { block.rows = []; }');
     L.push('        )');
     L.push('        .finally(function () { block.loading = false; });');
     L.push('    }');
@@ -1046,9 +783,8 @@ function genViewHtml() {
   L.push('        <div class="' + P + '">');
   L.push('            <div class="' + P + '-watermark" data-ng-if="!config.module">Open Edit and choose a Data Source to configure this widget.</div>');
   L.push('            <div data-ng-if="config.module && !unauthorized">');
-  L.push('                <div class="' + P + '-period">');
-  L.push('                    <span class="' + P + '-period-text">{{periodLabel}} <span class="' + P + '-sep">&middot;</span> {{config.dateField}}</span>');
-  L.push('                    <span class="' + P + '-live" data-ng-if="config.autoRefresh">&#9679; LIVE</span>');
+  L.push('                <div class="' + P + '-status" data-ng-if="config.autoRefresh">');
+  L.push('                    <span class="' + P + '-live">&#9679; LIVE</span>');
   L.push('                </div>');
   L.push('                <div class="' + P + '-grid">');
   design.blocks.forEach(function (b) {
@@ -1098,28 +834,7 @@ function genBlockHtml(b, P) {
   if (b.type === 'stat') {
     L.push(cell);
     L.push(tileOpen());
-    if (b.metric === 'oldestAge') {
-      L.push(I + '            <div class="' + P + '-tile-value" data-ng-if="!' + S + '.loading"');
-      L.push(I + '                data-ng-class="ageUrgencyClass(' + S + '.value)">{{formatAge(' + S + '.value)}}</div>');
-    } else {
-      L.push(I + '            <div class="' + P + '-tile-value" data-ng-if="!' + S + '.loading"');
-      L.push(I + '                data-ng-class="{\'' + P + '-u-high\': ' + C + '.onlyUnassigned && ' + S + '.value > 0}">{{' + S + '.value | number}}</div>');
-    }
-    L.push(tileClose);
-    return L.join('\n');
-  }
-
-  if (b.type === 'delta') {
-    L.push(cell);
-    L.push(tileOpen());
-    L.push(I + '            <div data-ng-if="!' + S + '.loading">');
-    L.push(I + '                <div class="' + P + '-tile-value">{{' + S + '.value | number}}</div>');
-    L.push(I + '                <div class="' + P + '-tile-sub" data-ng-if="' + S + '.changePercent !== null">');
-    L.push(I + '                    <span data-ng-class="' + S + '.cssClass">{{' + S + '.arrow}} {{' + S + '.changePercent | number:1}}%</span>');
-    L.push(I + '                    <span>vs previous {{periodLabel | lowercase}}</span>');
-    L.push(I + '                </div>');
-    L.push(I + '                <div class="' + P + '-tile-sub" data-ng-if="' + S + '.changePercent === null">no prior baseline</div>');
-    L.push(I + '            </div>');
+    L.push(I + '            <div class="' + P + '-tile-value" data-ng-if="!' + S + '.loading">{{' + S + '.value | number}}</div>');
     L.push(tileClose);
     return L.join('\n');
   }
@@ -1155,15 +870,12 @@ function genBlockHtml(b, P) {
     return L.join('\n');
   }
 
-  if (b.type === 'bars' || b.type === 'aging') {
+  if (b.type === 'bars') {
     L.push(cell);
     L.push(tileOpen());
     L.push(I + '            <div data-ng-if="!' + S + '.loading">');
     L.push(I + '                <div class="' + P + '-empty" data-ng-if="!' + S + '.rows.length">No data</div>');
     L.push(I + '                <div class="' + P + '-bar-row" data-ng-repeat="bar in ' + S + '.rows">');
-    if (b.type === 'bars') {
-      L.push(I + '                    <div class="' + P + '-bar-rank" data-ng-if="' + C + '.showRank">{{$index + 1}}</div>');
-    }
     L.push(I + '                    <div class="' + P + '-bar-label text-overflow" title="{{bar.label}}">{{bar.label}}</div>');
     L.push(I + '                    <div class="' + P + '-bar-track">');
     L.push(I + '                        <div class="' + P + '-bar-fill"');
@@ -1231,28 +943,6 @@ function genBlockHtml(b, P) {
     L.push(I + '                </div>');
     L.push(I + '            </div>');
     L.push(tileClose);
-    return L.join('\n');
-  }
-
-  if (b.type === 'trend') {
-    L.push(cell);
-    L.push(I + '    <div class="' + P + '-section-title">{{' + C + '.label}}</div>');
-    L.push(I + '    <cs-spinner data-ng-if="' + S + '.loading"></cs-spinner>');
-    L.push(I + '    <div class="' + P + '-trend-wrap" data-ng-if="!' + S + '.loading && ' + S + '.path">');
-    L.push(I + '        <svg viewBox="0 0 100 32" preserveAspectRatio="none" class="' + P + '-trend-svg">');
-    L.push(I + '            <polyline points="0,10.67 100,10.67" class="' + P + '-trend-grid"></polyline>');
-    L.push(I + '            <polyline points="0,21.33 100,21.33" class="' + P + '-trend-grid"></polyline>');
-    L.push(I + '            <polygon data-ng-attr-points="{{' + S + '.path.area}}" class="' + P + '-trend-area"></polygon>');
-    L.push(I + '            <polyline data-ng-attr-points="{{' + S + '.path.line}}" class="' + P + '-trend-line"></polyline>');
-    L.push(I + '            <circle data-ng-repeat="p in ' + S + '.path.points" data-ng-attr-cx="{{p.x}}" data-ng-attr-cy="{{p.y}}"');
-    L.push(I + '                r="3" class="' + P + '-trend-hit"><title>{{p.count}} records</title></circle>');
-    L.push(I + '        </svg>');
-    L.push(I + '        <div class="' + P + '-trend-range">');
-    L.push(I + '            <span>{{' + S + '.buckets[0].start | date:\'MMM d, HH:mm\'}}</span>');
-    L.push(I + '            <span>now</span>');
-    L.push(I + '        </div>');
-    L.push(I + '    </div>');
-    L.push(I + '</div>');
     return L.join('\n');
   }
 
@@ -1335,9 +1025,11 @@ function genEditController() {
   L.push('    $scope.save = save;');
   L.push('    $scope.onModuleChange = onModuleChange;');
   L.push('    $scope.toggleBlock = toggleBlock;');
+  L.push('    $scope.fieldVisible = fieldVisible;');
   L.push('');
-  L.push('    // Which per-block settings this widget exposes. Generated by the designer from');
-  L.push('    // the block layout; the layout itself is fixed at build time.');
+  L.push('    // Which per-block settings this widget exposes, and the shape of each one\'s');
+  L.push('    // input. Generated by the designer from the block layout; the layout itself');
+  L.push('    // (which panels exist, and in what order) is fixed at build time.');
   L.push('    $scope.blockMeta = [');
   design.blocks.forEach(function (b) {
     var spec = EDITABLE_SPEC[b.type] || [];
@@ -1353,8 +1045,7 @@ function genEditController() {
           return '{ value: ' + (typeof o.v === 'number' ? o.v : jsStr(o.v)) + ', label: ' + jsStr(o.l) + ' }';
         }).join(', ') + ']');
       }
-      // Only shown when the block's "kind" setting equals this value (see refAttr).
-      if (f.showIf) parts.push('showIf: ' + jsStr(f.showIf));
+      if (f.showIf) parts.push('showIf: ' + showIfExpr(f.showIf));
       L.push('          { ' + parts.join(', ') + ' },');
     });
     L.push('        ],');
@@ -1364,12 +1055,7 @@ function genEditController() {
   L.push('');
   L.push('    var BLOCK_DEFAULTS = {');
   design.blocks.forEach(function (b) {
-    var s = blockSettings(b);
-    var pairs = Object.keys(s).map(function (k) {
-      var v = s[k];
-      return k + ': ' + (typeof v === 'string' ? jsStr(v) : typeof v === 'boolean' ? String(v) : v === null || v === undefined ? 'null' : v);
-    });
-    L.push('      ' + b.id + ': { ' + pairs.join(', ') + ' },');
+    L.push('      ' + b.id + ': ' + litExpr(blockSettings(b)) + ',');
   });
   L.push('    };');
   L.push('');
@@ -1377,8 +1063,6 @@ function genEditController() {
   L.push('      var _config = {');
   L.push('        title: ' + jsStr(w.title) + ',');
   L.push('        module: ' + jsStr(w.module) + ',');
-  L.push('        dateField: ' + jsStr(w.dateField) + ',');
-  L.push('        period: ' + jsStr(w.period) + ',');
   L.push('        autoRefresh: ' + (w.autoRefresh ? 'true' : 'false') + ',');
   L.push('        refreshInterval: ' + w.refreshInterval + ',');
   L.push('      };');
@@ -1392,13 +1076,6 @@ function genEditController() {
   L.push('      });');
   L.push('');
   L.push('      $scope.pageConfig = {');
-  L.push('        periods: [');
-  L.push('          { value: "24h", label: "Last 24 Hours" },');
-  L.push('          { value: "7d", label: "Last 7 Days" },');
-  L.push('          { value: "30d", label: "Last 30 Days" },');
-  L.push('          { value: "90d", label: "Last 90 Days" },');
-  L.push('          { value: "all", label: "All Time" },');
-  L.push('        ],');
   L.push('        refreshIntervals: [');
   L.push('          { value: 60, label: "1 minute" },');
   L.push('          { value: 300, label: "5 minutes" },');
@@ -1417,9 +1094,17 @@ function genEditController() {
   L.push('    }');
   L.push('');
   L.push('    function onModuleChange() {');
-  L.push('      // Fields differ per module, so anything pointing at the previous module');
-  L.push('      // rarely makes sense for the new one.');
-  L.push('      $scope.config.dateField = null;');
+  L.push('      // Field names and Filter Criteria are module-specific, so anything pointing');
+  L.push('      // at the previous module is reset rather than carried over silently wrong.');
+  L.push('      angular.forEach($scope.blockMeta, function (meta) {');
+  L.push('        angular.forEach(meta.fields, function (f) {');
+  L.push('          if (f.kind === "anyField") {');
+  L.push('            $scope.config.blocks[meta.id][f.key] = null;');
+  L.push('          } else if (f.kind === "filter") {');
+  L.push('            $scope.config.blocks[meta.id][f.key] = { filters: [] };');
+  L.push('          }');
+  L.push('        });');
+  L.push('      });');
   L.push('      loadAttributes();');
   L.push('    }');
   L.push('');
@@ -1427,26 +1112,41 @@ function genEditController() {
   L.push('      meta.open = !meta.open;');
   L.push('    }');
   L.push('');
+  L.push('    // Hides fields that only make sense alongside another setting on the same');
+  L.push('    // block. Nothing in this widget\'s panels needs this today, but it costs');
+  L.push('    // nothing to support for future per-block options.');
+  L.push('    function fieldVisible(f, blockId) {');
+  L.push('      if (!f.showIf) {');
+  L.push('        return true;');
+  L.push('      }');
+  L.push('      var current = $scope.config.blocks[blockId][f.showIf.key];');
+  L.push('      if (f.showIf.truthy) {');
+  L.push('        return !!current;');
+  L.push('      }');
+  L.push('      return angular.isArray(f.showIf.value)');
+  L.push('        ? f.showIf.value.indexOf(current) >= 0');
+  L.push('        : current === f.showIf.value;');
+  L.push('    }');
+  L.push('');
   L.push('    function loadAttributes() {');
-  L.push('      $scope.dateFields = [];');
   L.push('      $scope.allFields = [];');
   L.push('      var entity = new Entity($scope.config.module);');
   L.push('      entity.loadFields().then(function () {');
-  L.push('        // Scan the raw field map (not just getFormFieldsArray()) so system/audit');
-  L.push('        // fields such as createDate still appear as candidates.');
-  L.push('        _.forEach(entity.fields, function (field, name) {');
-  L.push('          var option = { name: name, title: field.title || name };');
-  L.push('          $scope.allFields.push(option);');
-  L.push('          if (field.type === "datetime") {');
-  L.push('            $scope.dateFields.push(option);');
+  L.push('        // "datetime" fields default to an exact date/time picker in the filter');
+  L.push('        // builder. Switching to "datetime.quick" is what makes every Filter Criteria');
+  L.push('        // below offer the Relative option (Today, Last 7 Days, ...) for that field.');
+  L.push('        for (var key in entity.fields) {');
+  L.push('          if (entity.fields[key].type === "datetime") {');
+  L.push('            entity.fields[key].type = "datetime.quick";');
   L.push('          }');
-  L.push('        });');
-  L.push('        if (!$scope.config.dateField) {');
-  L.push('          var preferred = _.find($scope.dateFields, { name: ' + jsStr(w.dateField) + ' });');
-  L.push('          $scope.config.dateField = preferred');
-  L.push('            ? preferred.name');
-  L.push('            : ($scope.dateFields[0] && $scope.dateFields[0].name) || null;');
   L.push('        }');
+  L.push('        $scope.fields = entity.getFormFields();');
+  L.push('        angular.extend($scope.fields, entity.getRelationshipFields());');
+  L.push('        // Scan the raw field map (not just getFormFieldsArray()) so system/audit');
+  L.push('        // fields such as createDate still show up as Sort Field / Group By options.');
+  L.push('        $scope.allFields = _.map(entity.fields, function (field, name) {');
+  L.push('          return { name: name, title: field.title || name };');
+  L.push('        });');
   L.push('      });');
   L.push('    }');
   L.push('');
@@ -1490,34 +1190,16 @@ function genEditHtml() {
   L.push('');
   L.push('    <div class="form-group" data-ng-class="{ \'has-error\': ' + F + '.wModule.$invalid && ' + F + '.wModule.$touched }"');
   L.push('      data-ng-if="modules">');
-  L.push('      <label for="wModule" class="control-label">Data Source<span class="text-danger">*</span></label>');
+  L.push('      <label for="wModule" class="control-label">Data Source<span class="text-danger">*</span>');
+  L.push('        <span data-uib-tooltip="Shared by every panel below; each panel then applies its own Filter Criteria on top of it."');
+  L.push('          data-tooltip-append-to-body="true"><i class="margin-left-sm icon icon-information font-Size-13"></i></span>');
+  L.push('      </label>');
   L.push('      <select name="wModule" id="wModule" class="form-control"');
   L.push('        data-ng-options="module.type as module.name for module in modules | playbookModules"');
   L.push('        data-ng-model="config.module" data-ng-change="onModuleChange()" required>');
   L.push('        <option value="">Select an Option</option>');
   L.push('      </select>');
   L.push('      <div data-cs-messages="' + F + '.wModule"></div>');
-  L.push('    </div>');
-  L.push('');
-  L.push('    <div class="form-group" data-ng-class="{ \'has-error\': ' + F + '.wDateField.$invalid && ' + F + '.wDateField.$touched }"');
-  L.push('      data-ng-if="config.module">');
-  L.push('      <label for="wDateField" class="control-label">Time Range Field <span class="text-danger">*</span>');
-  L.push('        <span data-uib-tooltip="Which Date/Time field the Search Period measures against."');
-  L.push('          data-tooltip-append-to-body="true"><i class="margin-left-sm icon icon-information font-Size-13"></i></span>');
-  L.push('      </label>');
-  L.push('      <select id="wDateField" name="wDateField" class="form-control" data-ng-model="config.dateField"');
-  L.push('        data-ng-options="field.name as field.title for field in dateFields | orderBy: \'title\'" required>');
-  L.push('        <option value="">Select a field</option>');
-  L.push('      </select>');
-  L.push('      <div data-cs-messages="' + F + '.wDateField"></div>');
-  L.push('    </div>');
-  L.push('');
-  L.push('    <div class="form-group" data-ng-if="config.module">');
-  L.push('      <label for="wPeriod" class="control-label">Search Period <span class="text-danger">*</span></label>');
-  L.push('      <select id="wPeriod" name="wPeriod" class="form-control" style="width:50%"');
-  L.push('        data-ng-options="opt.value as opt.label for opt in pageConfig.periods"');
-  L.push('        data-ng-model="config.period" required>');
-  L.push('      </select>');
   L.push('    </div>');
   L.push('');
   L.push('    <div class="mertics-widget-border padding-top-md padding-bottom-md" data-ng-if="config.module"></div>');
@@ -1537,13 +1219,19 @@ function genEditHtml() {
   L.push('    <div class="mertics-widget-border padding-top-md padding-bottom-md" data-ng-if="config.module"></div>');
   L.push('    <div class="margin-top-md margin-bottom-md" data-ng-if="config.module">');
   L.push('      <h6>Panels');
-  L.push('        <span data-uib-tooltip="Retarget or relabel each panel. The set of panels and their order are fixed by the widget package."');
+  L.push('        <span data-uib-tooltip="Retarget, relabel or refilter each panel. The set of panels and their order are fixed by the widget package."');
   L.push('          data-tooltip-append-to-body="true"><i class="margin-left-sm icon icon-information font-Size-13"></i></span>');
   L.push('      </h6>');
   L.push('    </div>');
   L.push('');
   L.push('    <!-- One generic renderer for every panel: the shape of each form comes from');
-  L.push('         blockMeta, so adding panels never lengthens this template. -->');
+  L.push('         blockMeta, so adding panels never lengthens this template. "fields" and');
+  L.push('         "config" below are read with no $parent prefix - neither name is shadowed');
+  L.push('         by a repeat variable ("meta"/"f"), so normal scope inheritance finds the');
+  L.push('         controller\'s $scope.fields / $scope.config regardless of nesting depth,');
+  L.push('         and ng-model writes mutate a nested object property rather than rebinding');
+  L.push('         a primitive, so there is nothing here for the usual ng-repeat scope trap');
+  L.push('         to catch. -->');
   L.push('    <div data-ng-if="config.module" data-ng-repeat="meta in blockMeta" class="margin-bottom-sm">');
   L.push('      <div class="cursor-pointer padding-sm" data-ng-click="toggleBlock(meta)"');
   L.push('        style="border: 1px solid rgba(128,128,128,0.25); border-radius: 2px;">');
@@ -1552,17 +1240,26 @@ function genEditHtml() {
   L.push('        <span class="muted margin-left-sm font-size-12">{{meta.title}}</span>');
   L.push('      </div>');
   L.push('');
-  L.push('      <div data-ng-if="meta.open" class="padding-md"');
+  L.push('      <div data-ng-show="meta.open" class="padding-md"');
   L.push('        style="border: 1px solid rgba(128,128,128,0.18); border-top: none;">');
   L.push('        <div data-ng-repeat="f in meta.fields"');
-  L.push('          data-ng-if="!f.showIf || config.blocks[meta.id].kind === f.showIf">');
+  L.push('          data-ng-if="fieldVisible(f, meta.id)">');
   L.push('');
   L.push('          <div class="checkbox" data-ng-if="f.kind === \'bool\'">');
   L.push('            <label>');
   L.push('              <input type="checkbox" data-ng-model="config.blocks[meta.id][f.key]">{{f.label}}</label>');
   L.push('          </div>');
   L.push('');
-  L.push('          <div class="form-group" data-ng-if="f.kind !== \'bool\'">');
+  L.push('          <div class="form-group" data-ng-if="f.kind === \'filter\'">');
+  L.push('            <label class="control-label">{{f.label}}</label>');
+  L.push('            <div data-cs-conditional data-ng-if="fields" data-fields="fields"');
+  L.push('              data-reset-field="fields" data-mode="\'queryFilters\'"');
+  L.push('              data-ng-model="config.blocks[meta.id][f.key]"');
+  L.push('              data-parent-form="' + F + '" data-enable-expression="true"');
+  L.push('              data-show-uuid="true" data-form-name="\'' + F + '\'"></div>');
+  L.push('          </div>');
+  L.push('');
+  L.push('          <div class="form-group" data-ng-if="f.kind !== \'bool\' && f.kind !== \'filter\'">');
   L.push('            <label class="control-label">{{f.label}}</label>');
   L.push('');
   L.push('            <input type="text" class="form-control" data-ng-if="f.kind === \'text\'"');
@@ -1599,13 +1296,13 @@ function genEditHtml() {
 
 /* --------------------------------- CSS ---------------------------------- */
 function hexToRgb(hex) {
-  var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '#00e5ff');
-  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [0, 229, 255];
+  var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '#2f81f7');
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [47, 129, 247];
 }
 
 function genCss() {
   var P = prefix();
-  var a = design.widget.accent || '#00e5ff';
+  var a = design.widget.accent || '#2f81f7';
   var rgb = hexToRgb(a).join(', ');
   var L = [];
 
@@ -1625,7 +1322,7 @@ function genCss() {
   L.push('  padding: 14px;');
   L.push('  color: #dce3ec;');
   L.push('  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Malgun Gothic", sans-serif;');
-  L.push('  font-size: 13px;');
+  L.push('  font-size: 20px;');
   L.push('  background-color: #0d1218;');
   L.push('  border: 1px solid #1c2532;');
   L.push('}');
@@ -1640,28 +1337,15 @@ function genCss() {
   L.push('  padding: 18px 4px;');
   L.push('  text-align: center;');
   L.push('  color: #65748a;');
-  L.push('  font-size: 12px;');
+  L.push('  font-size: 18px;');
   L.push('}');
   L.push('');
-  L.push('.' + P + '-period {');
-  L.push('  display: flex;');
-  L.push('  align-items: center;');
-  L.push('  justify-content: space-between;');
-  L.push('  margin-bottom: 12px;');
-  L.push('  padding-bottom: 8px;');
-  L.push('  border-bottom: 1px solid #232c3a;');
-  L.push('  font-size: 11px;');
-  L.push('  text-transform: uppercase;');
-  L.push('  letter-spacing: 0.09em;');
-  L.push('  color: #8b99ab;');
-  L.push('}');
-  L.push('');
-  L.push('.' + P + '-sep { opacity: 0.5; margin: 0 3px; }');
+  L.push('.' + P + '-status { display: flex; justify-content: flex-end; margin-bottom: 10px; }');
   L.push('');
   L.push('.' + P + '-live {');
   L.push('  color: #2ea043;');
   L.push('  font-weight: 600;');
-  L.push('  font-size: 10px;');
+  L.push('  font-size: 15px;');
   L.push('  letter-spacing: 0.09em;');
   L.push('  border: 1px solid rgba(46, 160, 67, 0.4);');
   L.push('  padding: 2px 7px;');
@@ -1708,7 +1392,7 @@ function genCss() {
   L.push('  display: flex;');
   L.push('  align-items: center;');
   L.push('  justify-content: space-between;');
-  L.push('  font-size: 10px;');
+  L.push('  font-size: 15px;');
   L.push('  text-transform: uppercase;');
   L.push('  letter-spacing: 0.11em;');
   L.push('  color: #8b99ab;');
@@ -1717,18 +1401,18 @@ function genCss() {
   L.push('}');
   L.push('');
   L.push('.' + P + '-tile-body { padding: 12px; }');
-  L.push('.' + P + '-tile-total { color: #f0f4f9; font-size: 12px; }');
+  L.push('.' + P + '-tile-total { color: #f0f4f9; font-size: 18px; }');
   L.push('');
   L.push('.' + P + '-tile-value {');
-  L.push('  font-size: 30px;');
+  L.push('  font-size: 45px;');
   L.push('  font-weight: 600;');
   L.push('  line-height: 1.05;');
   L.push('  letter-spacing: -0.01em;');
   L.push('  color: #f0f4f9;');
   L.push('}');
   L.push('');
-  L.push('.' + P + '-tile-unit { font-size: 13px; color: #8b99ab; margin-left: 3px; font-weight: 400; }');
-  L.push('.' + P + '-tile-sub { font-size: 11px; color: #8b99ab; margin-top: 5px; }');
+  L.push('.' + P + '-tile-unit { font-size: 20px; color: #8b99ab; margin-left: 3px; font-weight: 400; }');
+  L.push('.' + P + '-tile-sub { font-size: 17px; color: #8b99ab; margin-top: 5px; }');
   L.push('.' + P + '-tile-sub span + span { margin-left: 5px; }');
   L.push('');
   L.push('/* Severity/urgency ramp - the only place strong colour is allowed. */');
@@ -1736,10 +1420,10 @@ function genCss() {
   L.push('.' + P + '-u-medium { color: #e3b341 !important; }');
   L.push('.' + P + '-u-high { color: #d9364c !important; }');
   L.push('');
-  L.push('.' + P + '-empty { font-size: 12px; padding: 4px 0; color: #65748a; }');
+  L.push('.' + P + '-empty { font-size: 18px; padding: 4px 0; color: #65748a; }');
   L.push('');
   L.push('.' + P + '-section-title {');
-  L.push('  font-size: 11px;');
+  L.push('  font-size: 17px;');
   L.push('  font-weight: 600;');
   L.push('  text-transform: uppercase;');
   L.push('  letter-spacing: 0.11em;');
@@ -1753,24 +1437,16 @@ function genCss() {
   L.push('  text-transform: none;');
   L.push('  font-weight: 400;');
   L.push('  letter-spacing: normal;');
-  L.push('  font-size: 11px;');
+  L.push('  font-size: 17px;');
   L.push('  opacity: 0.7;');
   L.push('  margin-left: 8px;');
   L.push('}');
-
-  if (has('delta')) {
-    L.push('');
-    L.push('/* "Good" and "bad" are per-widget: for backlog a rise is bad, for closures it is good. */');
-    L.push('.' + P + '-delta-good { color: #2ea043; }');
-    L.push('.' + P + '-delta-bad { color: #d9364c; }');
-    L.push('.' + P + '-delta-flat { color: #8b99ab; }');
-  }
 
   if (has('gauge')) {
     L.push('');
     L.push('.' + P + '-gauge-wrap { display: flex; align-items: center; gap: 14px; }');
     L.push('.' + P + '-gauge-svg { width: 96px; height: 56px; flex: 0 0 auto; }');
-    L.push('.' + P + '-gauge-value { font-size: 24px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }');
+    L.push('.' + P + '-gauge-value { font-size: 36px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }');
   }
 
   if (has('stacked')) {
@@ -1778,18 +1454,18 @@ function genCss() {
     L.push('.' + P + '-seg-bar { display: flex; height: 22px; border: 1px solid #232c3a; overflow: hidden; }');
     L.push('.' + P + '-seg { height: 100%; }');
     L.push('.' + P + '-seg-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 9px; }');
-    L.push('.' + P + '-seg-key { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #c3ccd8; }');
+    L.push('.' + P + '-seg-key { display: flex; align-items: center; gap: 6px; font-size: 17px; color: #c3ccd8; }');
     L.push('.' + P + '-seg-key b { color: #f0f4f9; }');
     L.push('.' + P + '-seg-swatch { width: 8px; height: 8px; flex: 0 0 auto; }');
   }
 
   if (has('table')) {
     L.push('');
-    L.push('.' + P + '-table { width: 100%; border-collapse: collapse; font-size: 12px; }');
+    L.push('.' + P + '-table { width: 100%; border-collapse: collapse; font-size: 18px; }');
     L.push('');
     L.push('.' + P + '-table th {');
     L.push('  text-align: left;');
-    L.push('  font-size: 10px;');
+    L.push('  font-size: 15px;');
     L.push('  text-transform: uppercase;');
     L.push('  letter-spacing: 0.09em;');
     L.push('  font-weight: 600;');
@@ -1805,17 +1481,15 @@ function genCss() {
     L.push('.' + P + '-table-title { color: #dce3ec; }');
   }
 
-  if (has('bars') || has('aging')) {
+  if (has('bars')) {
     L.push('');
     L.push('.' + P + '-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }');
     L.push('.' + P + '-bar-row:last-child { margin-bottom: 0; }');
     L.push('');
-    L.push('.' + P + '-bar-rank { flex: 0 0 auto; width: 14px; font-size: 10px; color: #65748a; font-variant-numeric: tabular-nums; }');
-    L.push('');
     L.push('.' + P + '-bar-label {');
     L.push('  flex: 0 0 32%;');
     L.push('  max-width: 32%;');
-    L.push('  font-size: 12px;');
+    L.push('  font-size: 18px;');
     L.push('  overflow: hidden;');
     L.push('  text-overflow: ellipsis;');
     L.push('  white-space: nowrap;');
@@ -1833,7 +1507,7 @@ function genCss() {
     L.push('');
     L.push('.' + P + '-bar-value {');
     L.push('  flex: 0 0 auto;');
-    L.push('  font-size: 12px;');
+    L.push('  font-size: 18px;');
     L.push('  font-weight: 600;');
     L.push('  min-width: 22px;');
     L.push('  text-align: right;');
@@ -1865,40 +1539,16 @@ function genCss() {
     L.push('  width: 62%;');
     L.push('}');
     L.push('');
-    L.push('.' + P + '-donut-total { font-size: 20px; font-weight: 600; line-height: 1.1; color: #f0f4f9; }');
-    L.push('.' + P + '-donut-caption { font-size: 9px; color: #8b99ab; letter-spacing: 0.1em; text-transform: uppercase; }');
+    L.push('.' + P + '-donut-total { font-size: 30px; font-weight: 600; line-height: 1.1; color: #f0f4f9; }');
+    L.push('.' + P + '-donut-caption { font-size: 14px; color: #8b99ab; letter-spacing: 0.1em; text-transform: uppercase; }');
     L.push('');
     L.push('.' + P + '-legend { list-style: none; margin: 0; padding: 0; flex: 1 1 90px; min-width: 56px; max-height: 150px; overflow-y: auto; }');
     L.push('.' + P + '-legend-bottom .' + P + '-legend,');
     L.push('.' + P + '-legend-top .' + P + '-legend { flex-basis: auto; min-width: 0; width: 100%; }');
-    L.push('.' + P + '-legend-item { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 11px; color: #c3ccd8; }');
+    L.push('.' + P + '-legend-item { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 17px; color: #c3ccd8; }');
     L.push('.' + P + '-legend-dot { width: 8px; height: 8px; flex: 0 0 auto; }');
     L.push('.' + P + '-legend-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }');
     L.push('.' + P + '-legend-value { flex: 0 0 auto; font-weight: 700; }');
-  }
-
-  if (has('trend')) {
-    L.push('');
-    L.push('.' + P + '-trend-wrap {');
-    L.push('  background: #141b24;');
-    L.push('  border: 1px solid #232c3a;');
-    L.push('  border-radius: 2px;');
-    L.push('  padding: 10px 12px 6px;');
-    L.push('}');
-    L.push('');
-    L.push('.' + P + '-trend-svg { width: 100%; height: 58px; overflow: visible; display: block; }');
-    L.push('');
-    L.push('.' + P + '-trend-line {');
-    L.push('  fill: none;');
-    L.push('  stroke: ' + a + ';');
-    L.push('  stroke-width: 1.5;');
-    L.push('  vector-effect: non-scaling-stroke;');
-    L.push('}');
-    L.push('');
-    L.push('.' + P + '-trend-area { fill: rgba(' + rgb + ', 0.14); stroke: none; }');
-    L.push('.' + P + '-trend-grid { stroke: #1c2532; stroke-width: 1; vector-effect: non-scaling-stroke; fill: none; }');
-    L.push('.' + P + '-trend-hit { fill: rgba(0, 0, 0, 0.01); stroke: none; pointer-events: all; }');
-    L.push('.' + P + '-trend-range { display: flex; justify-content: space-between; font-size: 10px; color: #65748a; margin-top: 3px; }');
   }
 
   if (has('list')) {
@@ -1931,7 +1581,7 @@ function genCss() {
     L.push('  overflow: hidden;');
     L.push('  text-overflow: ellipsis;');
     L.push('  white-space: nowrap;');
-    L.push('  font-size: 13px;');
+    L.push('  font-size: 20px;');
     L.push('  color: #dce3ec;');
     L.push('}');
     L.push('');
@@ -1940,7 +1590,7 @@ function genCss() {
     L.push('  display: flex;');
     L.push('  align-items: center;');
     L.push('  gap: 12px;');
-    L.push('  font-size: 11px;');
+    L.push('  font-size: 17px;');
     L.push('  color: #8b99ab;');
     L.push('  white-space: nowrap;');
     L.push('  font-variant-numeric: tabular-nums;');
@@ -2019,27 +1669,20 @@ function renderCode() {
   var warns = [];
   if (!design.widget.module) warns.push('No module set - the widget will render its "choose a Data Source" placeholder.');
   design.blocks.forEach(function (b) {
-    if ((b.type === 'bars' || b.type === 'donut') && !b.field) {
+    if ((b.type === 'bars' || b.type === 'donut' || b.type === 'stacked') && !b.field) {
       warns.push('"' + b.label + '" has no Group By field.');
     }
+    if (b.type === 'metric' && !b.field) {
+      warns.push('"' + b.label + '" has no numeric field set.');
+    }
   });
-  if (needsNotClosed()) {
-    warns.push('Blocks filtered to "unresolved" assume a picklist field named "status". Edit STATUS_FIELD / CLOSED_STATE_KEYWORDS in view.controller.js if your module differs.');
-  }
   // Rough per-refresh query cost, so a heavy board does not get an aggressive interval.
-  var COST = { header: 0, trend: 12, aging: 5, gauge: 2, delta: 2 };
   var queries = design.blocks.reduce(function (s, b) {
-    return s + (b.type === 'trend' ? (b.buckets || 12) : (COST[b.type] == null ? 1 : COST[b.type]));
+    return s + (b.type === 'header' ? 0 : b.type === 'gauge' ? 2 : 1);
   }, 0);
   if (queries > 12 && design.widget.autoRefresh && design.widget.refreshInterval < 300) {
     warns.push('This layout fires about ' + queries + ' queries per refresh; consider a 5 minute or slower interval.');
   }
-  if (has('delta') && design.widget.period === 'all') {
-    warns.push('Trend KPI blocks need a bounded period - they render "no prior baseline" while the period is All Time.');
-  }
-  design.blocks.forEach(function (b) {
-    if (b.type === 'metric' && !b.field) warns.push('"' + b.label + '" has no numeric field set.');
-  });
   document.getElementById('warnBox').innerHTML = warns.length
     ? '<div class="warn">' + warns.map(esc).join('<br>') + '</div>' : '';
 }
@@ -2049,4 +1692,3 @@ function renderAll() {
   renderProps();
   regen();
 }
-

@@ -58,16 +58,7 @@ function previewBlock(b) {
   }
 
   if (b.type === 'stat') {
-    var val = b.metric === 'oldestAge' ? '6d 4h' : '128';
-    var cls = (b.metric === 'oldestAge' || b.onlyUnassigned) ? ' u-high' : '';
-    return tileWrap(b.label, '<div class="tile-value' + cls + '">' + val + '</div>', b.accent);
-  }
-
-  if (b.type === 'delta') {
-    var up = b.goodDirection === 'down';
-    return tileWrap(b.label,
-      '<div class="tile-value">128</div>' +
-      '<div class="tile-sub"><span class="' + (up ? 'delta-up' : 'delta-down') + '">&#9650; 18.5%</span> vs previous</div>', true);
+    return tileWrap(b.label, '<div class="tile-value">128</div>', b.accent);
   }
 
   if (b.type === 'metric') {
@@ -92,7 +83,6 @@ function previewBlock(b) {
     var rows = mockBars(b.maxRows || 6);
     var inner = rows.map(function (r, i) {
       return '<div class="bar-row">' +
-        (b.showRank ? '<div class="bar-rank">' + (i + 1) + '</div>' : '') +
         '<div class="bar-label">' + esc(r.label) + '</div>' +
         '<div class="bar-track"><div class="bar-fill" style="width:' + r.pct + '%;background:' + r.color + '"></div></div>' +
         '<div class="bar-value">' + r.value + '</div></div>';
@@ -112,20 +102,6 @@ function previewBlock(b) {
     }).join('');
     return tileWrap(b.label, '<div class="seg-bar">' + segs + '</div><div class="seg-legend">' + keys + '</div>',
       false, '<span style="color:#f0f4f9;font-size:12px">' + tot + '</span>');
-  }
-
-  if (b.type === 'aging') {
-    var bands = [
-      { l: '< 1h', v: 4, c: '#2ea043' }, { l: '1-4h', v: 9, c: '#3fa7d6' },
-      { l: '4-24h', v: 14, c: '#e3b341' }, { l: '1-7d', v: 7, c: '#e8663d' }, { l: '> 7d', v: 3, c: '#d9364c' }
-    ];
-    var mx = 14;
-    var ab = bands.map(function (r) {
-      return '<div class="bar-row"><div class="bar-label">' + r.l + '</div>' +
-        '<div class="bar-track"><div class="bar-fill" style="width:' + ((r.v / mx) * 100).toFixed(1) + '%;background:' + r.c + '"></div></div>' +
-        '<div class="bar-value">' + r.v + '</div></div>';
-    }).join('');
-    return tileWrap(b.label, ab);
   }
 
   if (b.type === 'table') {
@@ -171,28 +147,6 @@ function previewBlock(b) {
       '<div style="flex:1 1 90px;min-width:56px">' + legend + '</div></div>');
   }
 
-  if (b.type === 'trend') {
-    var counts = [3, 4, 2, 5, 3, 6, 4, 8, 12, 20, 15, 9].slice(0, Math.max(3, Math.min(24, b.buckets || 12)));
-    var mx = Math.max.apply(null, counts), n = counts.length;
-    var pts = counts.map(function (c, i) {
-      var x = n > 1 ? (i / (n - 1)) * 100 : 50;
-      var y = mx ? 32 - 3 - (c / mx) * (32 - 6) : 29;
-      return x.toFixed(2) + ',' + y.toFixed(2);
-    });
-    var line = pts.join(' ');
-    var area = line + ' 100.00,32.00 0.00,32.00';
-    var last = pts[pts.length - 1].split(',');
-    var acc = design.widget.accent || '#2f81f7';
-    return '<div><div class="sec-title">' + esc(b.label) + '</div>' +
-      '<div class="trend-wrap"><svg viewBox="0 0 100 32" preserveAspectRatio="none" class="trend-svg">' +
-      '<polyline points="0,10.67 100,10.67" fill="none" stroke="#1c2532" stroke-width="1" vector-effect="non-scaling-stroke"></polyline>' +
-      '<polyline points="0,21.33 100,21.33" fill="none" stroke="#1c2532" stroke-width="1" vector-effect="non-scaling-stroke"></polyline>' +
-      '<polygon points="' + area + '" fill="' + acc + '" fill-opacity=".14"></polygon>' +
-      '<polyline points="' + line + '" fill="none" stroke="' + acc + '" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>' +
-      '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="2" fill="' + acc + '"></circle>' +
-      '</svg><div class="trend-range"><span>Jul 21, 09:00</span><span>now</span></div></div></div>';
-  }
-
   if (b.type === 'list') {
     var mock = [
       { t: 'Suspicious login from unknown IP', s: 'Open', a: '6d 4h', c: '#d9364c' },
@@ -216,7 +170,6 @@ function renderCanvas() {
   var w = design.widget;
   document.getElementById('devTitle').textContent = w.title || w.name;
   document.getElementById('devMeta').textContent = (w.module || '(no module)') + ' · v' + w.version;
-  document.getElementById('prevPeriod').textContent = (PERIOD_LABELS[w.period] || 'All Time') + ' · ' + (w.dateField || 'createDate');
   document.getElementById('prevLive').style.display = w.autoRefresh ? '' : 'none';
 
   var grid = document.getElementById('grid');
