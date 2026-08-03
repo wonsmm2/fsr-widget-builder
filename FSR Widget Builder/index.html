@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FortiSOAR Widget Designer</title>
+<!-- Builder chrome (toolbar, panes, properties form, code drawer). -->
+<link rel="stylesheet" href="css/app.css">
+<!-- Canvas preview theme - deliberately mirrors the CSS this tool generates. -->
+<link rel="stylesheet" href="css/preview.css">
+</head>
+<body>
+<div id="app">
+
+  <div class="toolbar">
+    <div class="brand">FortiSOAR <span>Widget Designer</span></div>
+    <button class="btn" id="btnNew">New</button>
+    <button class="btn" id="btnImport">Import Design</button>
+    <button class="btn" id="btnExport">Export Design</button>
+    <div class="tb-spacer"></div>
+    <span id="saveState" style="font-size:11px;color:var(--fg-faint)"></span>
+    <button class="btn" id="btnCode">&lt;/&gt; Code</button>
+    <button class="btn btn-primary" id="btnDownload">Download .tgz</button>
+  </div>
+
+  <div class="body">
+    <!-- PALETTE -->
+    <div class="pane">
+      <div class="pane-title">Blocks</div>
+      <div id="palette"></div>
+    </div>
+
+    <!-- CANVAS -->
+    <div class="pane pane-center">
+      <div class="pane-title">Canvas &mdash; live preview (mock data)</div>
+      <div class="canvas-wrap">
+        <div class="device">
+          <div class="device-bar">
+            <b id="devTitle">Widget</b>
+            <span id="devMeta"></span>
+          </div>
+          <div class="prev" id="prev">
+            <div class="prev-period">
+              <span class="lhs" id="prevPeriod">Last 7 Days &middot; createDate</span>
+              <span class="prev-live" id="prevLive">&#9679; LIVE</span>
+            </div>
+            <div class="prev-grid" id="grid"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROPERTIES -->
+    <div class="pane">
+      <div class="pane-title">Properties</div>
+      <div id="props" class="props"></div>
+    </div>
+  </div>
+
+  <!-- CODE DRAWER -->
+  <div class="drawer" id="drawer">
+    <div class="drawer-head" id="drawerHead">
+      <span class="caret">&#9656;</span>
+      <span class="drawer-head-title">Generated Code</span>
+      <div class="tb-spacer"></div>
+      <button class="btn" id="btnCopy" style="padding:4px 10px;font-size:12px">Copy file</button>
+    </div>
+    <div class="drawer-body">
+      <div class="tabs" id="tabs"></div>
+      <div id="warnBox"></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="fileIn" accept="application/json" style="display:none">
+
+<!--
+  Plain classic scripts sharing globals - no bundler and no ES modules, so the tool
+  still opens straight off the filesystem (file://) on an air-gapped box.
+  Load order matters: definitions first, boot last.
+-->
+<script src="js/blocks.js"></script>
+<script src="js/state.js"></script>
+<script src="js/palette.js"></script>
+<script src="js/canvas.js"></script>
+<script src="js/props.js"></script>
+<script src="js/codegen.js"></script>
+<script src="js/package.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
