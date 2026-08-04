@@ -26,10 +26,25 @@ function blankDesign() {
     blocks: [
       Object.assign(defaults('stat'), { label: 'Total', accent: true }),
       Object.assign(defaults('stat'), { label: 'Unassigned', accent: false }),
-      Object.assign(defaults('bars'), {}),
-      Object.assign(defaults('list'), {})
+      Object.assign(defaults('bars'), {})
     ]
   };
+}
+
+/* Brings one block from an older save up to the current shape. Anything that
+ * changes a setting's *type* has to be handled here: a stale value reaches the
+ * canvas renderer directly, and one throw there takes down the whole canvas -
+ * including drag and drop, which re-renders on drop. */
+function migrateBlock(b) {
+  // Table columns used to be a "field:Label, field2:Label2" spec string before the
+  // multi-field picker replaced it (README 0.6.4a). Keep the field names, drop the
+  // hand-written labels - real field titles come from the module schema now.
+  if (b.type === 'table' && typeof b.columns === 'string') {
+    b.columns = b.columns.split(',').map(function (part) {
+      return part.split(':')[0].trim();
+    }).filter(Boolean);
+  }
+  return b;
 }
 
 function load() {
@@ -39,7 +54,9 @@ function load() {
       design = JSON.parse(raw);
       // Drop any block whose type no longer exists (e.g. a design saved before a
       // block type was retired) so an old save can't crash the current build.
-      design.blocks = (design.blocks || []).filter(function (b) { return !!BLOCKS[b.type]; });
+      design.blocks = (design.blocks || [])
+        .filter(function (b) { return !!BLOCKS[b.type]; })
+        .map(migrateBlock);
       return;
     }
   } catch (e) { /* corrupt or unavailable storage: fall through to a blank design */ }

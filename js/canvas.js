@@ -12,14 +12,6 @@ function mockBars(n, seedLabels) {
   return out;
 }
 
-/* "severity:Severity, status:Status" -> [{f:'severity',l:'Severity'}, ...] */
-function parseColumns(str) {
-  return String(str || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean).map(function (s) {
-    var i = s.indexOf(':');
-    return i > 0 ? { f: s.slice(0, i).trim(), l: s.slice(i + 1).trim() } : { f: s, l: s };
-  });
-}
-
 function tileWrap(label, body, accent, right) {
   return '<div class="tile' + (accent ? ' accent' : '') + '">' +
     '<div class="tile-label"><span>' + esc(label) + '</span>' + (right || '') + '</div>' +
@@ -105,13 +97,18 @@ function previewBlock(b) {
   }
 
   if (b.type === 'table') {
-    var cols = parseColumns(b.columns);
-    var mockVals = { severity: ['Critical', 'High', 'Medium'], status: ['Open', 'In Progress', 'Open'], createDate: ['08-03 14:22', '08-03 11:07', '08-02 23:41'] };
-    var head = '<th>Name</th>' + cols.map(function (c) { return '<th>' + esc(c.l) + '</th>'; }).join('');
+    // Mirrors the generated widget: no columns picked falls back to the id alone.
+    var cols = Array.isArray(b.columns) && b.columns.length ? b.columns : ['id'];
+    var mockVals = {
+      id: ['1042', '1041', '1039'],
+      severity: ['Critical', 'High', 'Medium'],
+      status: ['Open', 'In Progress', 'Open'],
+      createDate: ['08-03 14:22', '08-03 11:07', '08-02 23:41']
+    };
+    var head = cols.map(function (f) { return '<th>' + esc(f) + '</th>'; }).join('');
     var body = [0, 1, 2].slice(0, Math.max(1, Math.min(3, b.limit || 3))).map(function (i) {
-      var names = ['Suspicious login from unknown IP', 'Malware on WKS-042', 'Phishing reported by user'];
-      return '<tr><td style="color:#dce3ec">' + names[i] + '</td>' + cols.map(function (c) {
-        var v = (mockVals[c.f] || ['-', '-', '-'])[i];
+      return '<tr>' + cols.map(function (f) {
+        var v = (mockVals[f] || ['-', '-', '-'])[i];
         return '<td>' + esc(v) + '</td>';
       }).join('') + '</tr>';
     }).join('');
@@ -147,22 +144,6 @@ function previewBlock(b) {
       '<div style="flex:1 1 90px;min-width:56px">' + legend + '</div></div>');
   }
 
-  if (b.type === 'list') {
-    var mock = [
-      { t: 'Suspicious login from unknown IP', s: 'Open', a: '6d 4h', c: '#d9364c' },
-      { t: 'Malware detected on endpoint WKS-042', s: 'In Progress', a: '12h 3m', c: '#e3b341' },
-      { t: 'Phishing email reported by user', s: 'Open', a: '22m', c: '#2ea043' }
-    ].slice(0, Math.max(1, Math.min(3, b.limit || 3)));
-    var rows = mock.map(function (m) {
-      return '<div class="li">' +
-        (b.showAge ? '<span class="li-dot" style="background:' + m.c + '"></span>' : '') +
-        '<div class="li-title">' + m.t + '</div>' +
-        '<div class="li-meta">' + (b.secondaryField ? '<span>' + m.s + '</span>' : '') +
-        (b.showAge ? '<span style="color:' + m.c + '">' + m.a + '</span>' : '') + '</div></div>';
-    }).join('');
-    return '<div><div class="sec-title">' + esc(b.label) +
-      (b.subtitle ? '<span class="sec-sub">' + esc(b.subtitle) + '</span>' : '') + '</div>' + rows + '</div>';
-  }
   return '';
 }
 

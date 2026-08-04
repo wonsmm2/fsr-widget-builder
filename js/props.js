@@ -8,6 +8,13 @@ function fld(label, inner, hint) {
 function txt(path, val, ph) {
   return '<input type="text" data-bind="' + path + '" value="' + esc(val) + '" placeholder="' + esc(ph || '') + '">';
 }
+/* Comma-separated field-name editor for array-valued settings (e.g. table columns).
+ * Runtime uses the real per-field ui-select once the widget is installed in
+ * FortiSOAR (see codegen.js's genEditHtml "anyFieldMulti" kind); at design time
+ * there's no live schema to pick from, so this is just typed field names. */
+function csv(path, arr, ph) {
+  return '<input type="text" data-bind-csv="' + path + '" value="' + esc((arr || []).join(', ')) + '" placeholder="' + esc(ph || '') + '">';
+}
 function num(path, val, min, max) {
   return '<input type="number" data-bind="' + path + '" value="' + esc(val) + '" min="' + (min == null ? 0 : min) + '" max="' + (max == null ? 999 : max) + '">';
 }
@@ -50,29 +57,29 @@ function renderProps() {
 function renderWidgetProps() {
   var w = design.widget;
   var h = '<div style="padding:12px 0 0">';
-  h += fld('Widget Name (camelCase)', txt('widget.name', w.name, 'myWidget'),
-    'Drives folder name, controller id and CSS prefix: ' + camelSafe(w.name) + '-' + w.version);
-  h += fld('Title', txt('widget.title', w.title));
-  h += fld('Subtitle', txt('widget.subTitle', w.subTitle));
-  h += fld('Version', txt('widget.version', w.version, '1.0.0'));
+  h += fld('위젯 API Identifier* (영문만 지원)', txt('widget.name', w.name, 'myWidget'),
+    '생성될 위젯 명: ' + camelSafe(w.name) + '-' + w.version);
+  h += fld('위젯 제목 (한글 지원)', txt('widget.title', w.title));
+  h += fld('부제목', txt('widget.subTitle', w.subTitle));
+  h += fld('위젯 버전 (한글 미지원)', txt('widget.version', w.version, '1.0.0'));
   h += fld('Publisher', txt('widget.publisher', w.publisher));
-  h += fld('FortiSOAR Compatibility', txt('widget.compatibility', w.compatibility, '7.6.2'));
+  h += fld('지원되는 FortiSOAR 버전', txt('widget.compatibility', w.compatibility, '7.6.2'));
 
   h += '<div class="divider"></div><div class="sub-head">Data</div>';
-  h += fld('Module (data source)', txt('widget.module', w.module, 'alerts'),
-    'Typed by hand - this builder never contacts a FortiSOAR instance. Shared by every panel below; each panel then applies its own Filter Criteria on top of it.');
+  h += fld('Module 선택 (FortiSOAR 배포 후 변경 가능)', txt('widget.module', w.module, 'alerts'),
+    '참고: FortiSOAR에 배포 후 각 위젯별로 필터를 적용하여 사용할 수 있습니다.');
 
-  h += '<div class="divider"></div><div class="sub-head">Runtime</div>';
-  h += chk('widget.autoRefresh', w.autoRefresh, 'Enable auto refresh by default');
+  h += '<div class="divider"></div><div class="sub-head">자동 새로고침 (FortiSOAR에서 변경 가능)</div>';
+  h += chk('widget.autoRefresh', w.autoRefresh, '자동 새로고침 켜기');
   if (w.autoRefresh) {
-    h += fld('Refresh Interval', sel('widget.refreshInterval', w.refreshInterval, [
-      { v: 60, l: '1 minute' }, { v: 300, l: '5 minutes' }, { v: 600, l: '10 minutes' },
-      { v: 900, l: '15 minutes' }, { v: 1800, l: '30 minutes' }
+    h += fld('자동 새로고침 주기', sel('widget.refreshInterval', w.refreshInterval, [
+      { v: 10, l: '10 초' }, { v: 30, l: '30 초' }, { v: 60, l: '1 분' }, { v: 300, l: '5 분' }, { v: 600, l: '10 분' },
+      { v: 900, l: '15 분' }, { v: 1800, l: '30 분' }
     ]));
   }
 
-  h += '<div class="divider"></div><div class="sub-head">Appearance</div>';
-  h += '<div class="fld"><label>Accent Color</label><div class="swatches">' +
+  h += '<div class="divider"></div><div class="sub-head">강조 색상</div>';
+  h += '<div class="fld"><label>강조 색상 선택</label><div class="swatches">' +
     ACCENTS.map(function (c) {
       return '<div class="swatch' + (w.accent === c ? ' on' : '') + '" data-accent="' + c + '" style="background:' + c + '"></div>';
     }).join('') + '</div></div>';
@@ -129,25 +136,10 @@ function renderBlockProps(b) {
     if (b.type === 'donut') h += fld('Legend Position', sel(p + 'legend', b.legend, ['right', 'left', 'top', 'bottom']));
   }
 
-  if (b.type === 'list') {
-    h += fld('Label', txt(p + 'label', b.label));
-    h += fld('Subtitle', txt(p + 'subtitle', b.subtitle, 'optional'));
-    h += fld('Sort Field', txt(p + 'sortField', b.sortField, 'e.g. createDate'));
-    h += fld('Sort Direction', sel(p + 'sortDir', b.sortDir, [
-      { v: 'ASC', l: 'Ascending (oldest first)' },
-      { v: 'DESC', l: 'Descending (newest first)' }
-    ]));
-    h += fld('Row Limit', num(p + 'limit', b.limit, 1, 50));
-    h += fld('Secondary Field', txt(p + 'secondaryField', b.secondaryField, 'status'), 'Shown on the right of each row. Leave blank to hide.');
-    h += chk(p + 'showAge', b.showAge, 'Show age + urgency dot');
-    if (b.showAge) h += '<div class="hint" style="margin:-6px 0 12px">Age is computed from Sort Field, so pick a Date/Time field as the sort field for this to make sense.</div>';
-    h += filterNote();
-  }
-
   if (b.type === 'table') {
     h += fld('Label', txt(p + 'label', b.label));
-    h += fld('Columns', txt(p + 'columns', b.columns, 'severity:Severity, status:Status'),
-      'Comma separated. Use field:Label to rename a header. The module display field is always the first column.');
+    h += fld('Columns', csv(p + 'columns', b.columns, 'severity, status, createDate'),
+      'Comma separated field names. Headers show the real field title once the widget is installed in FortiSOAR - this is just which fields to include.');
     h += fld('Sort Field', txt(p + 'sortField', b.sortField, 'e.g. createDate'));
     h += fld('Sort Direction', sel(p + 'sortDir', b.sortDir, [
       { v: 'DESC', l: 'Descending (newest first)' },
@@ -183,6 +175,22 @@ function bindInputs() {
       // whole panel for those; text inputs re-render only the canvas to keep focus.
       if (evt === 'change') { renderAll(); }
       else { renderCanvas(); regen(); }
+      save();
+    });
+  });
+
+  host.querySelectorAll('[data-bind-csv]').forEach(function (el) {
+    el.addEventListener('input', function () {
+      var path = el.dataset.bindCsv;
+      var val = el.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      if (path.indexOf('widget.') === 0) {
+        design.widget[path.slice(7)] = val;
+      } else {
+        var parts = path.split('.');           // block.<id>.<prop>
+        var blk = blockById(parts[1]);
+        if (blk) blk[parts[2]] = val;
+      }
+      renderCanvas(); regen();
       save();
     });
   });

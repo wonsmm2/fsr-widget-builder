@@ -13,21 +13,19 @@ function has(type) { return design.blocks.some(function (b) { return b.type === 
 /* Any block other than a static Section Title queries the module, so it needs the
  * Query service to turn its saved Filter Criteria into a request payload. */
 function needsQuery() { return usesAny(function (b) { return b.type !== 'header'; }); }
-function needsPaged() { return has('list') || has('table'); }
+function needsPaged() { return has('table'); }
 /* Entity is used at runtime purely to auto-detect whether a Group By field is a
  * picklist or a lookup/reference, so the query can target the right sub-attribute -
  * this is never asked as a design-time question (see blocks.js). */
 function needsEntity() { return has('bars') || has('donut') || has('stacked'); }
-/* modelMetadatasService/appModulesService/$state/$filter exist only to resolve the
- * module's display field and to make list/table rows clickable. */
-function needsOpenRecord() { return has('list') || has('table'); }
-function needsAge() { return usesAny(function (b) { return b.type === 'list' && b.showAge; }); }
+/* appModulesService/$state/$filter exist only to make table rows clickable. */
+function needsOpenRecord() { return has('table'); }
 function needsColorFor() { return has('bars') || has('donut') || has('stacked'); }
 function needsSegments() { return has('stacked'); }
 function needsMetricFmt() { return has('metric'); }
 /* Only Ratio Gauge fires two queries in parallel (numerator + denominator). */
 function needsQAll() { return has('gauge'); }
-/* Every KPI/aggregate block (not list/table, which use PagedCollection instead)
+/* Every KPI/aggregate block (not table, which uses PagedCollection instead)
  * shares the same "apply Filter Criteria, then aggregate" helper. */
 function needsAggregateHelper() {
   return has('stat') || has('metric') || has('gauge') || has('bars') || has('donut') || has('stacked');
@@ -53,56 +51,48 @@ function needsAggregateHelper() {
  * lookup is auto-detected at runtime, never asked.
  */
 var WIDTH_CHOICES = [
-  { v: 3, l: 'Quarter' }, { v: 4, l: 'Third' }, { v: 6, l: 'Half' },
-  { v: 8, l: 'Two-thirds' }, { v: 12, l: 'Full width' }
+  { v: 3, l: '1/4' }, { v: 4, l: '1/3' }, { v: 6, l: '1/2' },
+  { v: 8, l: '2/3' }, { v: 12, l: '전체 너비' }
 ];
 
-var F_LABEL = { key: 'label', label: 'Label', kind: 'text' };
-var F_WIDTH = { key: 'w', label: 'Width', kind: 'select', options: WIDTH_CHOICES };
+var F_LABEL = { key: 'label', label: '제목', kind: 'text' };
+var F_WIDTH = { key: 'w', label: '너비', kind: 'select', options: WIDTH_CHOICES };
 function filterField(key, label) {
-  return { key: key, label: label || 'Filter Criteria', kind: 'filter' };
+  return { key: key, label: label || '필터 정의', kind: 'filter' };
 }
 
 var EDITABLE_SPEC = {
-  stat: [F_LABEL, filterField('query'), { key: 'accent', label: 'Highlight tile', kind: 'bool' }, F_WIDTH],
+  stat: [F_LABEL, filterField('query'), { key: 'accent', label: '강조 표시', kind: 'bool' }, F_WIDTH],
   metric: [F_LABEL,
-    { key: 'field', label: 'Numeric field', kind: 'anyField' },
-    { key: 'op', label: 'Aggregate', kind: 'select', options: [{ v: 'avg', l: 'Average' }, { v: 'median', l: 'Median' }, { v: 'sum', l: 'Sum' }, { v: 'max', l: 'Maximum' }, { v: 'min', l: 'Minimum' }] },
-    { key: 'format', label: 'Format', kind: 'select', options: [{ v: 'number', l: 'Plain number' }, { v: 'seconds', l: 'Duration (seconds)' }, { v: 'minutes', l: 'Duration (minutes)' }, { v: 'hours', l: 'Duration (hours)' }, { v: 'percent', l: 'Percent' }] },
-    { key: 'decimals', label: 'Decimals', kind: 'number' },
+    { key: 'field', label: '숫자 필드', kind: 'anyField' },
+    { key: 'op', label: '집계 방식', kind: 'select', options: [{ v: 'avg', l: '평균' }, { v: 'median', l: '중앙값' }, { v: 'sum', l: '합계' }, { v: 'max', l: '최댓값' }, { v: 'min', l: '최솟값' }] },
+    { key: 'format', label: '표시 형식', kind: 'select', options: [{ v: 'number', l: '일반 숫자' }, { v: 'seconds', l: '기간 (초)' }, { v: 'minutes', l: '기간 (분)' }, { v: 'hours', l: '기간 (시간)' }, { v: 'percent', l: '백분율' }] },
+    { key: 'decimals', label: '소수점 자리수', kind: 'number' },
     filterField('query'),
-    { key: 'accent', label: 'Highlight tile', kind: 'bool' }, F_WIDTH],
+    { key: 'accent', label: '강조 표시', kind: 'bool' }, F_WIDTH],
   gauge: [F_LABEL,
-    filterField('denominatorQuery', 'Denominator Filter Criteria'),
-    filterField('numeratorQuery', 'Numerator Filter Criteria'),
-    { key: 'target', label: 'Target %', kind: 'number' },
-    { key: 'accent', label: 'Highlight tile', kind: 'bool' }, F_WIDTH],
+    filterField('denominatorQuery', '분모 필터 정의'),
+    filterField('numeratorQuery', '분자 필터 정의'),
+    { key: 'target', label: '목표 비율(%)', kind: 'number' },
+    { key: 'accent', label: '강조 표시', kind: 'bool' }, F_WIDTH],
   bars: [F_LABEL,
-    { key: 'field', label: 'Group by field', kind: 'anyField' },
+    { key: 'field', label: '그룹 기준 필드', kind: 'anyField' },
     filterField('query'),
-    { key: 'maxRows', label: 'Max rows', kind: 'number' }, F_WIDTH],
+    { key: 'maxRows', label: '최대 표시 행 수', kind: 'number' }, F_WIDTH],
   stacked: [F_LABEL,
-    { key: 'field', label: 'Group by field', kind: 'anyField' },
+    { key: 'field', label: '그룹 기준 필드', kind: 'anyField' },
     filterField('query'), F_WIDTH],
   donut: [F_LABEL,
-    { key: 'field', label: 'Group by field', kind: 'anyField' },
+    { key: 'field', label: '그룹 기준 필드', kind: 'anyField' },
     filterField('query'),
-    { key: 'legend', label: 'Legend position', kind: 'select', options: [{ v: 'right', l: 'Right' }, { v: 'left', l: 'Left' }, { v: 'top', l: 'Top' }, { v: 'bottom', l: 'Bottom' }] }, F_WIDTH],
-  list: [F_LABEL,
-    { key: 'subtitle', label: 'Subtitle', kind: 'text' },
-    { key: 'sortField', label: 'Sort field', kind: 'anyField' },
-    { key: 'sortDir', label: 'Sort direction', kind: 'select', options: [{ v: 'ASC', l: 'Oldest first' }, { v: 'DESC', l: 'Newest first' }] },
-    { key: 'limit', label: 'Row limit', kind: 'number' },
-    { key: 'secondaryField', label: 'Secondary field', kind: 'anyField' },
-    { key: 'showAge', label: 'Show age + urgency (uses Sort Field)', kind: 'bool' },
-    filterField('query'), F_WIDTH],
+    { key: 'legend', label: '범례 위치', kind: 'select', options: [{ v: 'right', l: '오른쪽' }, { v: 'left', l: '왼쪽' }, { v: 'top', l: '위' }, { v: 'bottom', l: '아래' }] }, F_WIDTH],
   table: [F_LABEL,
-    { key: 'columns', label: 'Columns (field:Label, ...)', kind: 'text' },
-    { key: 'sortField', label: 'Sort field', kind: 'anyField' },
-    { key: 'sortDir', label: 'Sort direction', kind: 'select', options: [{ v: 'DESC', l: 'Newest first' }, { v: 'ASC', l: 'Oldest first' }] },
-    { key: 'limit', label: 'Row limit', kind: 'number' },
+    { key: 'columns', label: '필드', kind: 'anyFieldMulti' },
+    { key: 'sortField', label: '정렬 필드', kind: 'anyField' },
+    { key: 'sortDir', label: '정렬 방향', kind: 'select', options: [{ v: 'DESC', l: '최신순' }, { v: 'ASC', l: '오래된순' }] },
+    { key: 'limit', label: '행 수 제한', kind: 'number' },
     filterField('query'), F_WIDTH],
-  header: [{ key: 'text', label: 'Text', kind: 'text' }, F_WIDTH]
+  header: [{ key: 'text', label: '텍스트', kind: 'text' }, F_WIDTH]
 };
 
 /* Serializes a field's showIf condition - either { key, truthy: true } (show when
@@ -169,7 +159,7 @@ function genViewController() {
   if (needsQuery()) { deps.push('Query'); }
   if (needsPaged()) { deps.push('PagedCollection'); }
   if (needsEntity() || needsOpenRecord()) { deps.push('Entity'); }
-  if (needsOpenRecord()) { deps.push('modelMetadatasService', 'appModulesService', '$state', '$filter'); }
+  if (needsOpenRecord()) { deps.push('appModulesService', '$state', '$filter'); }
   if (needsQAll()) { deps.push('$q'); }
 
   L.push('"use strict";');
@@ -208,11 +198,6 @@ function genViewController() {
     L.push('    var INNER_RADIUS = 56;');
     L.push('    var SEGMENT_GAP = 4;');
   }
-  if (needsAge()) {
-    L.push('    var URGENCY_MEDIUM_HOURS = 4;');
-    L.push('    var URGENCY_HIGH_HOURS = 24;');
-  }
-
   L.push('');
   L.push('    // Per-block settings the Edit dialog can change at runtime. Shipped defaults');
   L.push('    // are merged underneath whatever was saved, so a widget configured before a');
@@ -240,12 +225,11 @@ function genViewController() {
     else if (b.type === 'bars') L.push('      ' + b.id + ': { loading: false, rows: [] },');
     else if (b.type === 'stacked') L.push('      ' + b.id + ': { loading: false, segments: [], total: 0 },');
     else if (b.type === 'donut') L.push('      ' + b.id + ': { loading: false, slices: [], total: 0 },');
-    else if (b.type === 'list' || b.type === 'table') L.push('      ' + b.id + ': { loading: false, rows: [] },');
+    else if (b.type === 'table') L.push('      ' + b.id + ': { loading: false, rows: [] },');
   });
   L.push('    };');
   L.push('    $scope.refresh = _refreshAll;');
   if (needsOpenRecord()) {
-    L.push('    $scope.titleField = "name";');
     L.push('    $scope.openRecord = openRecord;');
   }
   if (needsMetricFmt()) { L.push('    $scope.formatMetric = _formatMetric;'); }
@@ -253,11 +237,6 @@ function genViewController() {
     L.push('    $scope.ringMidRadius = (OUTER_RADIUS + INNER_RADIUS) / 2;');
     L.push('    $scope.ringThickness = OUTER_RADIUS - INNER_RADIUS;');
   }
-  if (needsAge()) {
-    L.push('    $scope.formatAge = _formatAge;');
-    L.push('    $scope.ageUrgencyClass = _ageUrgencyClass;');
-  }
-
   L.push('');
   L.push('    function init() {');
   L.push('      if (!$scope.config.module) {');
@@ -297,9 +276,13 @@ function genViewController() {
       L.push('          }');
       L.push('        });');
     }
-    if (needsOpenRecord()) {
-      L.push('        var meta = modelMetadatasService.getMetadataByModuleType($scope.config.module);');
-      L.push('        $scope.titleField = (meta && meta.displayName) || "name";');
+    if (has('table')) {
+      L.push('        // Column headers show the field\'s real schema title, resolved here rather');
+      L.push('        // than typed by hand - the Edit dialog only lets an admin pick field names.');
+      L.push('        $scope.fieldTitle = {};');
+      L.push('        angular.forEach(entity.fields, function (field, name) {');
+      L.push('          $scope.fieldTitle[name] = field.title || name;');
+      L.push('        });');
     }
     L.push('      }).finally(function () {');
     L.push('        _refreshAll();');
@@ -440,26 +423,6 @@ function genViewController() {
     L.push('');
   }
 
-  if (has('table')) {
-    L.push('    // "severity:Severity, status:Status" -> [{ field, label }, ...].');
-    L.push('    // Parsed at runtime so the column list stays editable from the Edit dialog.');
-    L.push('    function _parseColumns(spec) {');
-    L.push('      return _.compact(');
-    L.push('        _.map(String(spec || "").split(","), function (part) {');
-    L.push('          var trimmed = part.trim();');
-    L.push('          if (!trimmed) {');
-    L.push('            return null;');
-    L.push('          }');
-    L.push('          var sep = trimmed.indexOf(":");');
-    L.push('          return sep > 0');
-    L.push('            ? { field: trimmed.slice(0, sep).trim(), label: trimmed.slice(sep + 1).trim() }');
-    L.push('            : { field: trimmed, label: trimmed };');
-    L.push('        })');
-    L.push('      );');
-    L.push('    }');
-    L.push('');
-  }
-
   if (has('donut')) {
     L.push('    function _buildSlices(rows) {');
     L.push('      var present = _.filter(rows, function (row) {');
@@ -516,39 +479,6 @@ function genViewController() {
     L.push('        "A", INNER_RADIUS, INNER_RADIUS, 0, largeArcFlag, 0, innerStart.x, innerStart.y,');
     L.push('        "Z",');
     L.push('      ].join(" ");');
-    L.push('    }');
-    L.push('');
-  }
-
-  if (needsAge()) {
-    L.push('    function _formatAge(ms) {');
-    L.push('      if (ms === null || ms === undefined || ms < 0) {');
-    L.push('        return "--";');
-    L.push('      }');
-    L.push('      var minutes = Math.floor(ms / 60000);');
-    L.push('      var hours = Math.floor(minutes / 60);');
-    L.push('      var days = Math.floor(hours / 24);');
-    L.push('      if (days > 0) {');
-    L.push('        return days + "d " + (hours % 24) + "h";');
-    L.push('      }');
-    L.push('      if (hours > 0) {');
-    L.push('        return hours + "h " + (minutes % 60) + "m";');
-    L.push('      }');
-    L.push('      return minutes + "m";');
-    L.push('    }');
-    L.push('');
-    L.push('    function _ageUrgencyClass(ms) {');
-    L.push('      if (ms === null || ms === undefined) {');
-    L.push('        return "";');
-    L.push('      }');
-    L.push('      var hours = ms / 3600000;');
-    L.push('      if (hours >= URGENCY_HIGH_HOURS) {');
-    L.push('        return "' + prefix() + '-u-high";');
-    L.push('      }');
-    L.push('      if (hours >= URGENCY_MEDIUM_HOURS) {');
-    L.push('        return "' + prefix() + '-u-medium";');
-    L.push('      }');
-    L.push('      return "' + prefix() + '-u-low";');
     L.push('    }');
     L.push('');
   }
@@ -695,47 +625,17 @@ function genBlockLoader(b) {
     L.push('    }');
   }
 
-  if (b.type === 'list') {
-    L = L.concat(open);
-    L.push('      block.loading = true;');
-    L.push('      var selectFields = _.compact([$scope.titleField, settings.secondaryField, settings.sortField]);');
-    L.push('      var limit = settings.limit || 8;');
-    L.push('      var queryConfig = angular.extend({}, settings.query, {');
-    L.push('        limit: limit,');
-    L.push('        __selectFields: selectFields,');
-    L.push('      });');
-    L.push('      if (settings.sortField) {');
-    L.push('        queryConfig.sort = [{ field: settings.sortField, direction: settings.sortDir }];');
-    L.push('      }');
-    L.push('      var pagedCollection = new PagedCollection($scope.config.module, null, { $limit: limit });');
-    L.push('      pagedCollection.query = new Query(queryConfig);');
-    L.push('      pagedCollection');
-    L.push('        .loadGridRecord()');
-    L.push('        .then(');
-    L.push('          function () {');
-    L.push('            block.rows = _.map(pagedCollection.fieldRows, function (row) {');
-    L.push('              if (settings.showAge && settings.sortField) {');
-    L.push('                var raw = row[settings.sortField] && row[settings.sortField].value;');
-    L.push('                var ageMs = raw ? Date.now() - new Date(raw).getTime() : null;');
-    L.push('                row.__ageLabel = _formatAge(ageMs);');
-    L.push('                row.__urgency = _ageUrgencyClass(ageMs);');
-    L.push('              }');
-    L.push('              return row;');
-    L.push('            });');
-    L.push('          },');
-    L.push('          function () { block.rows = []; }');
-    L.push('        )');
-    L.push('        .finally(function () { block.loading = false; });');
-    L.push('    }');
-  }
-
   if (b.type === 'table') {
     L = L.concat(open);
     L.push('      block.loading = true;');
-    L.push('      block.columns = _parseColumns(settings.columns);');
-    L.push('      var selectFields = _.compact(');
-    L.push('        [$scope.titleField].concat(_.map(block.columns, function (col) { return col.field; }))');
-    L.push('      );');
+    L.push('      // Nothing picked in the Edit dialog: fall back to the record id alone,');
+    L.push('      // rather than a table with no columns at all.');
+    L.push('      block.columns = angular.isArray(settings.columns) && settings.columns.length');
+    L.push('        ? _.map(settings.columns, function (name) {');
+    L.push('            return { field: name, label: $scope.fieldTitle[name] || name };');
+    L.push('          })');
+    L.push('        : [{ field: "id", label: "ID" }];');
+    L.push('      var selectFields = _.compact(_.map(block.columns, function (col) { return col.field; }));');
     L.push('      var limit = settings.limit || 8;');
     L.push('      var queryConfig = angular.extend({}, settings.query, {');
     L.push('        limit: limit,');
@@ -781,7 +681,7 @@ function genViewHtml() {
   L.push('    </div>');
   L.push('    <div data-ng-hide="collapsed">');
   L.push('        <div class="' + P + '">');
-  L.push('            <div class="' + P + '-watermark" data-ng-if="!config.module">Open Edit and choose a Data Source to configure this widget.</div>');
+  L.push('            <div class="' + P + '-watermark" data-ng-if="!config.module">위젯 설정에서 데이터 소스를 선택해 주세요.</div>');
   L.push('            <div data-ng-if="config.module && !unauthorized">');
   L.push('                <div class="' + P + '-status" data-ng-if="config.autoRefresh">');
   L.push('                    <span class="' + P + '-live">&#9679; LIVE</span>');
@@ -946,27 +846,6 @@ function genBlockHtml(b, P) {
     return L.join('\n');
   }
 
-  if (b.type === 'list') {
-    L.push(cell);
-    L.push(I + '    <div class="' + P + '-section-title">{{' + C + '.label}}');
-    L.push(I + '        <span class="' + P + '-section-sub" data-ng-if="' + C + '.subtitle">{{' + C + '.subtitle}}</span></div>');
-    L.push(I + '    <cs-spinner data-ng-if="' + S + '.loading"></cs-spinner>');
-    L.push(I + '    <div data-ng-if="!' + S + '.loading">');
-    L.push(I + '        <div class="' + P + '-watermark" data-ng-if="!' + S + '.rows.length">No matching records</div>');
-    L.push(I + '        <div class="' + P + '-row" data-ng-repeat="record in ' + S + '.rows"');
-    L.push(I + '            data-ng-click="openRecord(record[\'@id\'].value)" role="button" tabindex="0">');
-    L.push(I + '            <span class="' + P + '-dot" data-ng-if="' + C + '.showAge" data-ng-class="record.__urgency"></span>');
-    L.push(I + '            <div class="' + P + '-row-title text-overflow" data-cs-view-field="record[titleField]"></div>');
-    L.push(I + '            <div class="' + P + '-row-meta">');
-    L.push(I + '                <span data-ng-if="' + C + '.secondaryField" data-cs-view-field="record[' + C + '.secondaryField]"></span>');
-    L.push(I + '                <span data-ng-if="' + C + '.showAge" data-ng-class="record.__urgency">{{record.__ageLabel}}</span>');
-    L.push(I + '            </div>');
-    L.push(I + '        </div>');
-    L.push(I + '    </div>');
-    L.push(I + '</div>');
-    return L.join('\n');
-  }
-
   if (b.type === 'table') {
     L.push(cell);
     L.push(I + '    <div class="' + P + '-section-title">{{' + C + '.label}}</div>');
@@ -976,14 +855,12 @@ function genBlockHtml(b, P) {
     L.push(I + '        <table class="' + P + '-table" data-ng-if="' + S + '.rows.length">');
     L.push(I + '            <thead>');
     L.push(I + '                <tr>');
-    L.push(I + '                    <th>Name</th>');
     L.push(I + '                    <th data-ng-repeat="col in ' + S + '.columns">{{col.label}}</th>');
     L.push(I + '                </tr>');
     L.push(I + '            </thead>');
     L.push(I + '            <tbody>');
     L.push(I + '                <tr data-ng-repeat="record in ' + S + '.rows"');
     L.push(I + '                    data-ng-click="openRecord(record[\'@id\'].value)" role="button" tabindex="0">');
-    L.push(I + '                    <td class="' + P + '-table-title" data-cs-view-field="record[titleField]"></td>');
     L.push(I + '                    <td data-ng-repeat="col in ' + S + '.columns" data-cs-view-field="record[col.field]"></td>');
     L.push(I + '                </tr>');
     L.push(I + '            </tbody>');
@@ -1077,11 +954,11 @@ function genEditController() {
   L.push('');
   L.push('      $scope.pageConfig = {');
   L.push('        refreshIntervals: [');
-  L.push('          { value: 60, label: "1 minute" },');
-  L.push('          { value: 300, label: "5 minutes" },');
-  L.push('          { value: 600, label: "10 minutes" },');
-  L.push('          { value: 900, label: "15 minutes" },');
-  L.push('          { value: 1800, label: "30 minutes" },');
+  L.push('          { value: 60, label: "1 분" },');
+  L.push('          { value: 300, label: "5 분" },');
+  L.push('          { value: 600, label: "10 분" },');
+  L.push('          { value: 900, label: "15 분" },');
+  L.push('          { value: 1800, label: "30 분" },');
   L.push('        ],');
   L.push('      };');
   L.push('');
@@ -1100,6 +977,8 @@ function genEditController() {
   L.push('        angular.forEach(meta.fields, function (f) {');
   L.push('          if (f.kind === "anyField") {');
   L.push('            $scope.config.blocks[meta.id][f.key] = null;');
+  L.push('          } else if (f.kind === "anyFieldMulti") {');
+  L.push('            $scope.config.blocks[meta.id][f.key] = [];');
   L.push('          } else if (f.kind === "filter") {');
   L.push('            $scope.config.blocks[meta.id][f.key] = { filters: [] };');
   L.push('          }');
@@ -1175,7 +1054,7 @@ function genEditHtml() {
   var L = [];
   L.push('<form data-ng-submit="save()" class="noMargin" name="' + F + '" novalidate>');
   L.push('  <div class="modal-header">');
-  L.push('    <h3 class="modal-title col-md-9">' + esc(w.title) + ' Edit View</h3>');
+  L.push('    <h3 class="modal-title col-md-9">' + esc(w.title) + ' 위젯 구성</h3>');
   L.push('    <button type="button" class="close" data-ng-click="cancel()" data-dismiss="modal" aria-label="Close"');
   L.push('      id="close-edit-widget-form-btn">');
   L.push('      <div aria-hidden="true" class="version-button">+</div>');
@@ -1183,33 +1062,33 @@ function genEditHtml() {
   L.push('  </div>');
   L.push('  <div class="modal-body">');
   L.push('    <div class="form-group" data-ng-class="{ \'has-error\': ' + F + '.title.$invalid && ' + F + '.title.$touched }">');
-  L.push('      <label for="title" class="control-label">Title <span class="text-danger">*</span></label>');
+  L.push('      <label for="title" class="control-label">제목 <span class="text-danger">*</span></label>');
   L.push('      <input id="title" name="title" type="text" class="form-control" data-ng-model="config.title" required>');
   L.push('      <div data-cs-messages="' + F + '.title"></div>');
   L.push('    </div>');
   L.push('');
   L.push('    <div class="form-group" data-ng-class="{ \'has-error\': ' + F + '.wModule.$invalid && ' + F + '.wModule.$touched }"');
   L.push('      data-ng-if="modules">');
-  L.push('      <label for="wModule" class="control-label">Data Source<span class="text-danger">*</span>');
-  L.push('        <span data-uib-tooltip="Shared by every panel below; each panel then applies its own Filter Criteria on top of it."');
+  L.push('      <label for="wModule" class="control-label">데이터 소스<span class="text-danger">*</span>');
+  L.push('        <span data-uib-tooltip="아래의 모든 패널이 공통으로 사용하는 데이터소스이며, 각 패널은 여기에 자신만의 필터 정의를 추가로 적용합니다."');
   L.push('          data-tooltip-append-to-body="true"><i class="margin-left-sm icon icon-information font-Size-13"></i></span>');
   L.push('      </label>');
   L.push('      <select name="wModule" id="wModule" class="form-control"');
   L.push('        data-ng-options="module.type as module.name for module in modules | playbookModules"');
   L.push('        data-ng-model="config.module" data-ng-change="onModuleChange()" required>');
-  L.push('        <option value="">Select an Option</option>');
+  L.push('        <option value="">옵션 선택</option>');
   L.push('      </select>');
   L.push('      <div data-cs-messages="' + F + '.wModule"></div>');
   L.push('    </div>');
   L.push('');
   L.push('    <div class="mertics-widget-border padding-top-md padding-bottom-md" data-ng-if="config.module"></div>');
-  L.push('    <div class="margin-top-md margin-bottom-md" data-ng-if="config.module"><h6>Auto Refresh</h6></div>');
+  L.push('    <div class="margin-top-md margin-bottom-md" data-ng-if="config.module"><h6>자동 새로고침</h6></div>');
   L.push('    <div class="checkbox" data-ng-if="config.module">');
   L.push('      <label for="autoRefresh">');
-  L.push('        <input id="autoRefresh" type="checkbox" name="autoRefresh" data-ng-model="config.autoRefresh">Automatically refresh this widget</label>');
+  L.push('        <input id="autoRefresh" type="checkbox" name="autoRefresh" data-ng-model="config.autoRefresh">이 위젯을 자동으로 새로고침</label>');
   L.push('    </div>');
   L.push('    <div class="form-group" data-ng-if="config.module && config.autoRefresh">');
-  L.push('      <label for="refreshInterval" class="control-label">Refresh Interval</label>');
+  L.push('      <label for="refreshInterval" class="control-label">새로고침 주기</label>');
   L.push('      <select name="refreshInterval" id="refreshInterval" class="form-control" style="width:40%"');
   L.push('        data-ng-options="opt.value as opt.label for opt in pageConfig.refreshIntervals"');
   L.push('        data-ng-model="config.refreshInterval" required>');
@@ -1218,8 +1097,8 @@ function genEditHtml() {
   L.push('');
   L.push('    <div class="mertics-widget-border padding-top-md padding-bottom-md" data-ng-if="config.module"></div>');
   L.push('    <div class="margin-top-md margin-bottom-md" data-ng-if="config.module">');
-  L.push('      <h6>Panels');
-  L.push('        <span data-uib-tooltip="Retarget, relabel or refilter each panel. The set of panels and their order are fixed by the widget package."');
+  L.push('      <h6>패널');
+  L.push('        <span data-uib-tooltip="각 패널의 대상, 제목, 필터를 자유롭게 변경할 수 있습니다. 패널 구성과 순서는 위젯 패키지에 고정되어 있습니다."');
   L.push('          data-tooltip-append-to-body="true"><i class="margin-left-sm icon icon-information font-Size-13"></i></span>');
   L.push('      </h6>');
   L.push('    </div>');
@@ -1259,7 +1138,25 @@ function genEditHtml() {
   L.push('              data-show-uuid="true" data-form-name="\'' + F + '\'"></div>');
   L.push('          </div>');
   L.push('');
-  L.push('          <div class="form-group" data-ng-if="f.kind !== \'bool\' && f.kind !== \'filter\'">');
+  L.push('          <!-- Multi-field picker, same ui-select widget userAssignments uses for its');
+  L.push('               multi-module picker - "allFields as X" keeps the ng-model array holding');
+  L.push('               plain field-name strings while $item in the match template stays the');
+  L.push('               full { name, title } object. -->');
+  L.push('          <div class="form-group" data-ng-if="f.kind === \'anyFieldMulti\'">');
+  L.push('            <label class="control-label">{{f.label}}</label>');
+  L.push('            <div class="cs-select">');
+  L.push('              <ui-select data-ng-model="config.blocks[meta.id][f.key]" multiple class="custom-multi-select"');
+  L.push('                tagging="undefined" tagging-label="false">');
+  L.push('                <ui-select-match placeholder="필드 선택">{{$item.title}}</ui-select-match>');
+  L.push('                <ui-select-choices repeat="field.name as field in allFields | orderBy: \'title\' | filter: $select.search">');
+  L.push('                  <div ng-bind="field.title"></div>');
+  L.push('                </ui-select-choices>');
+  L.push('              </ui-select>');
+  L.push('              <span class="fa fa-sort-desc"></span>');
+  L.push('            </div>');
+  L.push('          </div>');
+  L.push('');
+  L.push('          <div class="form-group" data-ng-if="f.kind !== \'bool\' && f.kind !== \'filter\' && f.kind !== \'anyFieldMulti\'">');
   L.push('            <label class="control-label">{{f.label}}</label>');
   L.push('');
   L.push('            <input type="text" class="form-control" data-ng-if="f.kind === \'text\'"');
@@ -1277,7 +1174,7 @@ function genEditHtml() {
   L.push('            <select class="form-control" data-ng-if="f.kind === \'anyField\'"');
   L.push('              data-ng-options="field.name as field.title for field in allFields | orderBy: \'title\'"');
   L.push('              data-ng-model="config.blocks[meta.id][f.key]">');
-  L.push('              <option value="">Select a field</option>');
+  L.push('              <option value="">필드 선택</option>');
   L.push('            </select>');
   L.push('          </div>');
   L.push('        </div>');
@@ -1286,9 +1183,9 @@ function genEditHtml() {
   L.push('  </div>');
   L.push('  <div class="modal-footer">');
   L.push('    <button id="edit-widget-save" type="submit" class="btn btn-sm btn-primary"><i');
-  L.push('        class="icon icon-check margin-right-sm"></i>Save</button>');
+  L.push('        class="icon icon-check margin-right-sm"></i>저장</button>');
   L.push('    <button id="edit-widget-cancel" type="button" class="btn btn-sm btn-default" data-ng-click="cancel()"><i');
-  L.push('        class="icon icon-close margin-right-sm"></i>Close</button>');
+  L.push('        class="icon icon-close margin-right-sm"></i>닫기</button>');
   L.push('  </div>');
   L.push('</form>');
   return L.join('\n') + '\n';
@@ -1415,11 +1312,6 @@ function genCss() {
   L.push('.' + P + '-tile-sub { font-size: 14px; color: #8b99ab; margin-top: 5px; }');
   L.push('.' + P + '-tile-sub span + span { margin-left: 5px; }');
   L.push('');
-  L.push('/* Severity/urgency ramp - the only place strong colour is allowed. */');
-  L.push('.' + P + '-u-low { color: #2ea043 !important; }');
-  L.push('.' + P + '-u-medium { color: #e3b341 !important; }');
-  L.push('.' + P + '-u-high { color: #d9364c !important; }');
-  L.push('');
   L.push('.' + P + '-empty { font-size: 14px; padding: 4px 0; color: #65748a; }');
   L.push('');
   L.push('.' + P + '-section-title {');
@@ -1431,15 +1323,6 @@ function genCss() {
   L.push('  margin-bottom: 9px;');
   L.push('  padding-bottom: 6px;');
   L.push('  border-bottom: 1px solid #232c3a;');
-  L.push('}');
-  L.push('');
-  L.push('.' + P + '-section-sub {');
-  L.push('  text-transform: none;');
-  L.push('  font-weight: 400;');
-  L.push('  letter-spacing: normal;');
-  L.push('  font-size: 14px;');
-  L.push('  opacity: 0.7;');
-  L.push('  margin-left: 8px;');
   L.push('}');
 
   if (has('gauge')) {
@@ -1478,7 +1361,6 @@ function genCss() {
     L.push('.' + P + '-table td { padding: 6px 9px; border-bottom: 1px solid #1c2532; color: #c3ccd8; }');
     L.push('.' + P + '-table tbody tr { cursor: pointer; }');
     L.push('.' + P + '-table tbody tr:hover td { background: #161d28; }');
-    L.push('.' + P + '-table-title { color: #dce3ec; }');
   }
 
   if (has('bars')) {
@@ -1549,52 +1431,6 @@ function genCss() {
     L.push('.' + P + '-legend-dot { width: 8px; height: 8px; flex: 0 0 auto; }');
     L.push('.' + P + '-legend-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }');
     L.push('.' + P + '-legend-value { flex: 0 0 auto; font-weight: 700; }');
-  }
-
-  if (has('list')) {
-    L.push('');
-    L.push('/* Rows share a single collapsed 1px rule so the list reads as one table body. */');
-    L.push('.' + P + '-row {');
-    L.push('  display: flex;');
-    L.push('  align-items: center;');
-    L.push('  justify-content: space-between;');
-    L.push('  gap: 10px;');
-    L.push('  padding: 7px 10px;');
-    L.push('  background: #141b24;');
-    L.push('  border: 1px solid #232c3a;');
-    L.push('  border-top: none;');
-    L.push('  cursor: pointer;');
-    L.push('  transition: background-color 0.12s ease-out;');
-    L.push('}');
-    L.push('');
-    L.push('.' + P + '-row:first-of-type { border-top: 1px solid #232c3a; }');
-    L.push('.' + P + '-row:hover { background: #1a2230; }');
-    L.push('');
-    L.push('/* A flat severity bar reads faster than a dot at list density. */');
-    L.push('.' + P + '-dot { flex: 0 0 auto; width: 3px; height: 22px; background-color: #2ea043; }');
-    L.push('.' + P + '-dot.' + P + '-u-medium { background-color: #e3b341; }');
-    L.push('.' + P + '-dot.' + P + '-u-high { background-color: #d9364c; }');
-    L.push('');
-    L.push('.' + P + '-row-title {');
-    L.push('  flex: 1 1 auto;');
-    L.push('  min-width: 0;');
-    L.push('  overflow: hidden;');
-    L.push('  text-overflow: ellipsis;');
-    L.push('  white-space: nowrap;');
-    L.push('  font-size: 16px;');
-    L.push('  color: #dce3ec;');
-    L.push('}');
-    L.push('');
-    L.push('.' + P + '-row-meta {');
-    L.push('  flex: 0 0 auto;');
-    L.push('  display: flex;');
-    L.push('  align-items: center;');
-    L.push('  gap: 12px;');
-    L.push('  font-size: 14px;');
-    L.push('  color: #8b99ab;');
-    L.push('  white-space: nowrap;');
-    L.push('  font-variant-numeric: tabular-nums;');
-    L.push('}');
   }
 
   return L.join('\n') + '\n';

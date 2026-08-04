@@ -129,20 +129,6 @@
     font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .11em;
     color: #8b99ab; margin-bottom: 9px; padding-bottom: 6px; border-bottom: 1px solid #232c3a;
   }
-  .sec-sub { text-transform: none; font-weight: 400; letter-spacing: normal; font-size: 11px; opacity: .7; margin-left: 8px; }
-
-  .li {
-    display: flex; align-items: center; gap: 10px;
-    padding: 7px 10px;
-    border: 1px solid #232c3a;
-    border-top: none;
-    background: #141b24;
-  }
-  .li:first-of-type { border-top: 1px solid #232c3a; }
-  .li-dot { width: 3px; height: 22px; flex: 0 0 auto; }
-  .li-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: #dce3ec; }
-  .li-meta { flex: 0 0 auto; display: flex; gap: 12px; font-size: 11px; color: #8b99ab; font-variant-numeric: tabular-nums; }
-
   .tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
   .tbl th {
     text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .09em;

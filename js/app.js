@@ -10,36 +10,6 @@ function setupToolbar() {
     toast('New design');
   });
 
-  document.getElementById('btnExport').addEventListener('click', function () {
-    downloadBlob(new Blob([JSON.stringify(design, null, 2)], { type: 'application/json' }),
-      camelSafe(design.widget.name) + '.design.json');
-    toast('Design exported');
-  });
-
-  document.getElementById('btnImport').addEventListener('click', function () {
-    document.getElementById('fileIn').click();
-  });
-
-  document.getElementById('fileIn').addEventListener('change', function (ev) {
-    var f = ev.target.files[0];
-    if (!f) return;
-    var r = new FileReader();
-    r.onload = function () {
-      try {
-        var d = JSON.parse(r.result);
-        if (!d.widget || !Array.isArray(d.blocks)) throw new Error('not a design file');
-        design = d;
-        selectedId = null;
-        renderAll(); save();
-        toast('Design imported');
-      } catch (e) {
-        toast('Could not read that file');
-      }
-    };
-    r.readAsText(f);
-    ev.target.value = '';
-  });
-
   var drawer = document.getElementById('drawer');
   document.getElementById('drawerHead').addEventListener('click', function (ev) {
     if (ev.target.id === 'btnCopy') return;

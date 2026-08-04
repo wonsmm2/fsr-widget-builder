@@ -15,24 +15,22 @@
   <div class="toolbar">
     <div class="brand">FortiSOAR <span>Widget Designer</span></div>
     <button class="btn" id="btnNew">New</button>
-    <button class="btn" id="btnImport">Import Design</button>
-    <button class="btn" id="btnExport">Export Design</button>
     <div class="tb-spacer"></div>
     <span id="saveState" style="font-size:11px;color:var(--fg-faint)"></span>
-    <button class="btn" id="btnCode">&lt;/&gt; Code</button>
-    <button class="btn btn-primary" id="btnDownload">Download .tgz</button>
+    <button class="btn" id="btnCode">&lt;/&gt; 코드보기</button>
+    <button class="btn btn-primary" id="btnDownload">.tgz 파일로 다운로드</button>
   </div>
 
   <div class="body">
     <!-- PALETTE -->
     <div class="pane">
-      <div class="pane-title">Blocks</div>
+      <div class="pane-title">위젯 모음</div>
       <div id="palette"></div>
     </div>
 
     <!-- CANVAS -->
     <div class="pane pane-center">
-      <div class="pane-title">Canvas &mdash; live preview (mock data)</div>
+      <div class="pane-title">Canvas &mdash; 미리보기</div>
       <div class="canvas-wrap">
         <div class="device">
           <div class="device-bar">
@@ -49,7 +47,7 @@
 
     <!-- PROPERTIES -->
     <div class="pane">
-      <div class="pane-title">Properties</div>
+      <div class="pane-title">위젯 설정</div>
       <div id="props" class="props"></div>
     </div>
   </div>
@@ -58,9 +56,9 @@
   <div class="drawer" id="drawer">
     <div class="drawer-head" id="drawerHead">
       <span class="caret">&#9656;</span>
-      <span class="drawer-head-title">Generated Code</span>
+      <span class="drawer-head-title">생성된 코드</span>
       <div class="tb-spacer"></div>
-      <button class="btn" id="btnCopy" style="padding:4px 10px;font-size:12px">Copy file</button>
+      <button class="btn" id="btnCopy" style="padding:4px 10px;font-size:12px">코드 복사</button>
     </div>
     <div class="drawer-body">
       <div class="tabs" id="tabs"></div>
@@ -72,7 +70,6 @@
 </div>
 
 <div class="toast" id="toast"></div>
-<input type="file" id="fileIn" accept="application/json" style="display:none">
 
 <!--
   Plain classic scripts sharing globals - no bundler and no ES modules, so the tool
